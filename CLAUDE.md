@@ -114,12 +114,12 @@ Required env vars (see .env.example): SNA_API_KEY, SNA_ADMIN_API_KEY, DATABASE_U
 - [x] Component 22: Dashboard UI (React/Vite: VerdictFeed, EscalationPanel, AuditExplorer, EASMonitor, AgentManager, PolicyViewer, SummaryCards)
 - [x] Component 23: Docker & deployment (multi-stage Dockerfile, docker-compose with Postgres, non-root, read-only filesystem, health checks)
 
-### Phase 4: Context-Aware Policy & Advanced Governance — NOT STARTED
-- [ ] Component 24: Context-aware policy rules (site/role/tag-based policy variations)
-- [ ] Component 25: Policy versioning (audit trail of policy changes, rollback to previous versions)
-- [ ] Component 26: Per-agent policy sets (different agents get different rule sets)
-- [ ] Component 27: Dynamic confidence adjustment (agent history, device criticality weighting)
-- [ ] Component 28: Agent reputation scoring (EAS with time-decay, peer trust signals)
+### Phase 4: Context-Aware Policy & Advanced Governance — COMPLETE
+- [x] Component 24: Context-aware policy rules (site/role/tag evaluation, priority resolution, fail-closed, engine integration)
+- [x] Component 25: Policy versioning (immutable version history, SHA-256 hashing, rollback support, API endpoints)
+- [x] Component 26: Per-agent policy overrides (agent-specific rules, restrictiveness guarantee, CRUD endpoints)
+- [x] Component 27: Dynamic confidence adjustment (device criticality raises threshold, agent history lowers it)
+- [x] Component 28: Agent reputation scoring (time-decayed composite from EAS, verdicts, execution success)
 
 ### Phase 5: Advanced Validation & Network Intelligence — NOT STARTED
 - [ ] Component 29: pyATS validation integration (post-change health checks, structured test cases)

@@ -10,6 +10,13 @@ from dataclasses import dataclass, field
 
 import structlog
 
+from sna.validation.config_diff_validator import SemanticDiffValidator
+from sna.validation.protocol_validators import (
+    BGPNeighborUpValidator,
+    OSPFNeighborValidator,
+    PrefixCountValidator,
+    RouteConvergenceValidator,
+)
 from sna.validation.validator import ValidationResult, ValidationStatus, Validator
 
 logger = structlog.get_logger()
@@ -139,6 +146,11 @@ TESTCASE_REGISTRY: dict[str, Validator] = {
     "config_changed": ConfigChangedValidator(),
     "interface_up": InterfaceUpValidator(),
     "reachability": ReachabilityValidator(),
+    "semantic_diff": SemanticDiffValidator(),
+    "bgp_neighbor_up": BGPNeighborUpValidator(),
+    "ospf_neighbor_full": OSPFNeighborValidator(),
+    "prefix_count": PrefixCountValidator(),
+    "route_convergence": RouteConvergenceValidator(),
 }
 
 
@@ -170,6 +182,26 @@ DEFAULT_RULES: list[ValidationRule] = [
         testcase_name="config_changed",
         description="Verify config changed after BGP neighbor configuration",
     ),
+    ValidationRule(
+        tool_pattern="configure_bgp_neighbor",
+        testcase_name="bgp_neighbor_up",
+        description="Verify BGP neighbor reaches Established state",
+    ),
+    ValidationRule(
+        tool_pattern="configure_bgp_neighbor",
+        testcase_name="prefix_count",
+        description="Verify BGP prefix count is healthy",
+    ),
+    ValidationRule(
+        tool_pattern="configure_ospf_area",
+        testcase_name="config_changed",
+        description="Verify config changed after OSPF configuration",
+    ),
+    ValidationRule(
+        tool_pattern="configure_ospf_area",
+        testcase_name="ospf_neighbor_full",
+        description="Verify OSPF neighbor reaches FULL state",
+    ),
 ]
 
 
@@ -178,10 +210,16 @@ class ValidationEngine:
 
     Args:
         rules: List of validation rules. Defaults to DEFAULT_RULES.
+        pyats_enabled: If True and pyATS available, run through pyATS adapter.
     """
 
-    def __init__(self, rules: list[ValidationRule] | None = None) -> None:
+    def __init__(
+        self,
+        rules: list[ValidationRule] | None = None,
+        pyats_enabled: bool = False,
+    ) -> None:
         self._rules = rules or DEFAULT_RULES
+        self._pyats_enabled = pyats_enabled
 
     def get_rules_for_tool(self, tool_name: str) -> list[ValidationRule]:
         """Return all validation rules that apply to a tool."""
@@ -196,6 +234,9 @@ class ValidationEngine:
     ) -> list[ValidationResult]:
         """Run all applicable validations for a tool execution.
 
+        If pyats_enabled and pyATS is available, runs through the pyATS adapter.
+        Otherwise runs validators natively.
+
         Args:
             tool_name: The tool that was executed.
             device_target: The device that was modified.
@@ -206,6 +247,11 @@ class ValidationEngine:
             List of ValidationResults. Empty if no rules apply.
         """
         rules = self.get_rules_for_tool(tool_name)
+        if not rules:
+            return []
+
+        # Collect validators for matching rules
+        validators_for_pyats: list[Validator] = []
         results: list[ValidationResult] = []
 
         for rule in rules:
@@ -223,21 +269,63 @@ class ValidationEngine:
                 ))
                 continue
 
+            if self._pyats_enabled:
+                validators_for_pyats.append(validator)
+            else:
+                try:
+                    result = await validator.validate(tool_name, device_target, before_state, after_state)
+                    results.append(result)
+                except Exception as exc:
+                    await logger.aerror(
+                        "validation_error",
+                        testcase=rule.testcase_name,
+                        tool=tool_name,
+                        error=str(exc),
+                    )
+                    results.append(ValidationResult(
+                        status=ValidationStatus.ERROR,
+                        testcase_name=rule.testcase_name,
+                        message=f"Validation error: {exc}",
+                    ))
+
+        # Run through pyATS adapter if enabled
+        if self._pyats_enabled and validators_for_pyats:
             try:
-                result = await validator.validate(tool_name, device_target, before_state, after_state)
-                results.append(result)
-            except Exception as exc:
-                await logger.aerror(
-                    "validation_error",
-                    testcase=rule.testcase_name,
-                    tool=tool_name,
-                    error=str(exc),
+                from sna.validation.pyats_adapter import (
+                    PyATSNotAvailable,
+                    create_pyats_job,
+                    run_pyats_validation,
                 )
-                results.append(ValidationResult(
-                    status=ValidationStatus.ERROR,
-                    testcase_name=rule.testcase_name,
-                    message=f"Validation error: {exc}",
-                ))
+
+                testcases = create_pyats_job(tool_name, device_target, validators_for_pyats)
+                pyats_results = await run_pyats_validation(testcases, before_state, after_state)
+                results.extend(pyats_results)
+            except PyATSNotAvailable:
+                await logger.awarning("pyats_not_available_fallback_native")
+                # Fallback to native validation
+                for validator in validators_for_pyats:
+                    try:
+                        result = await validator.validate(tool_name, device_target, before_state, after_state)
+                        results.append(result)
+                    except Exception as exc:
+                        results.append(ValidationResult(
+                            status=ValidationStatus.ERROR,
+                            testcase_name=type(validator).__name__,
+                            message=f"Validation error: {exc}",
+                        ))
+            except Exception as exc:
+                await logger.aerror("pyats_validation_error", error=str(exc))
+                # Fallback to native
+                for validator in validators_for_pyats:
+                    try:
+                        result = await validator.validate(tool_name, device_target, before_state, after_state)
+                        results.append(result)
+                    except Exception as val_exc:
+                        results.append(ValidationResult(
+                            status=ValidationStatus.ERROR,
+                            testcase_name=type(validator).__name__,
+                            message=f"Validation error: {val_exc}",
+                        ))
 
         return results
 

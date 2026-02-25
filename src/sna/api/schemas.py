@@ -223,3 +223,63 @@ class HealthFullResponse(BaseModel):
     policy_version: str
     db_connected: bool
     last_audit_write: datetime | None = None
+
+
+# --- Batch operations ---
+
+
+class BatchItemRequest(BaseModel):
+    """A single item in a batch execution request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_target: str = Field(min_length=1, max_length=255)
+    tool_name: str = Field(min_length=1, max_length=255)
+    params: dict[str, str] = Field(default_factory=dict, max_length=50)
+    platform: str = Field(default="cisco_iosxe", max_length=50)
+    depends_on: list[str] = Field(default_factory=list, max_length=20)
+    priority: int = Field(default=0, ge=0, le=100)
+
+
+class BatchExecuteRequest(BaseModel):
+    """POST /batch/execute request body."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[BatchItemRequest] = Field(min_length=1)
+    confidence_score: float = Field(ge=0.0, le=1.0, default=0.5)
+    context: dict[str, object] = Field(default_factory=dict, max_length=50)
+    rollback_on_failure: bool = True
+
+
+class DeviceBatchResultResponse(BaseModel):
+    """Per-device result in a batch response."""
+
+    device: str
+    success: bool
+    output: str = ""
+    rolled_back: bool = False
+    error: str | None = None
+    validation_results: list[dict] = Field(default_factory=list)
+
+
+class BatchExecuteResponse(BaseModel):
+    """POST /batch/execute response body."""
+
+    batch_id: str
+    total: int
+    succeeded: int
+    failed: int
+    rolled_back: int
+    duration_seconds: float
+    items: list[DeviceBatchResultResponse]
+
+
+class BatchStatusResponse(BaseModel):
+    """GET /batch/{batch_id}/status response body."""
+
+    batch_id: str
+    status: str
+    total: int
+    succeeded: int
+    failed: int

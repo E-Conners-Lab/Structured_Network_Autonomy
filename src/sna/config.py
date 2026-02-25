@@ -72,6 +72,19 @@ class Settings(BaseSettings):
     netbox_sync_interval: int = 300  # seconds
     netbox_cache_ttl: float = 300.0  # seconds
 
+    # Device enrichment
+    enrichment_enabled: bool = True
+    enrichment_criticality_default: float = 0.5
+
+    # Validation
+    validation_trigger_rollback: bool = True
+    pyats_enabled: bool = False
+    pyats_testbed_path: str | None = None
+
+    # Batch operations
+    max_batch_size: int = 10
+    rate_limit_batch: int = 5
+
     # Logging
     log_level: str = "INFO"
     log_format: str = "json"

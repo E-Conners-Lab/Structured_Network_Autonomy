@@ -7,8 +7,11 @@ from unittest.mock import AsyncMock
 import pytest
 
 from sna.devices.enrichment import (
+    CRITICALITY_MAP,
     DeviceContext,
     DeviceInfo,
+    build_policy_context,
+    compute_device_criticality,
     enrich_device_context,
     _highest_risk_device,
     _parse_device_info,
@@ -151,3 +154,78 @@ class TestEnrichDeviceContext:
 
         ctx = await enrich_device_context(["core-01"], mock_client)
         assert ctx.has_production_core
+
+
+class TestComputeDeviceCriticality:
+    """Criticality score computation from device role."""
+
+    def test_known_role(self) -> None:
+        device = DeviceInfo(name="r1", role="core-router", enriched=True)
+        assert compute_device_criticality(device) == 0.9
+
+    def test_unknown_role(self) -> None:
+        device = DeviceInfo(name="r1", role="unknown", enriched=False)
+        assert compute_device_criticality(device) == 0.5
+
+    def test_role_not_in_map(self) -> None:
+        device = DeviceInfo(name="r1", role="custom-device", enriched=True)
+        assert compute_device_criticality(device) == 0.5
+
+    def test_custom_default(self) -> None:
+        device = DeviceInfo(name="r1", role="custom-device", enriched=True)
+        assert compute_device_criticality(device, default_criticality=0.7) == 0.7
+
+    def test_empty_role(self) -> None:
+        device = DeviceInfo(name="r1", role="", enriched=True)
+        assert compute_device_criticality(device) == 0.5
+
+    def test_clamps_to_valid_range(self) -> None:
+        device = DeviceInfo(name="r1", role="firewall", enriched=True)
+        result = compute_device_criticality(device)
+        assert 0.0 <= result <= 1.0
+
+
+class TestBuildPolicyContext:
+    """Policy context building from device context."""
+
+    def test_single_device(self) -> None:
+        device = DeviceInfo(
+            name="sw1", role="access-switch", site="hq",
+            tags=("managed", "monitored"), enriched=True,
+        )
+        ctx = DeviceContext(devices=(device,), all_enriched=True, sites=("hq",), roles=("access-switch",))
+        result = build_policy_context(ctx)
+        assert result["site"] == "hq"
+        assert result["device_role"] == "access-switch"
+        assert result["device_criticality"] == 0.3
+        assert "managed" in result["device_tags"]
+        assert "monitored" in result["device_tags"]
+
+    def test_multiple_devices_highest_criticality_wins(self) -> None:
+        d1 = DeviceInfo(name="sw1", role="access-switch", site="hq", enriched=True)
+        d2 = DeviceInfo(name="r1", role="core-router", site="dc1", enriched=True)
+        ctx = DeviceContext(
+            devices=(d1, d2), all_enriched=True,
+            sites=("dc1", "hq"), roles=("access-switch", "core-router"),
+        )
+        result = build_policy_context(ctx)
+        assert result["device_criticality"] == 0.9  # core-router wins
+
+    def test_empty_context(self) -> None:
+        ctx = DeviceContext()
+        result = build_policy_context(ctx)
+        assert result == {}
+
+    def test_tags_merged(self) -> None:
+        d1 = DeviceInfo(name="sw1", role="access-switch", tags=("managed",), enriched=True)
+        d2 = DeviceInfo(name="sw2", role="access-switch", tags=("managed", "critical"), enriched=True)
+        ctx = DeviceContext(devices=(d1, d2), all_enriched=True)
+        result = build_policy_context(ctx)
+        assert set(result["device_tags"]) == {"managed", "critical"}
+
+    def test_unknown_sites_and_roles(self) -> None:
+        device = DeviceInfo(name="sw1", role="unknown", site="unknown", enriched=False)
+        ctx = DeviceContext(devices=(device,))
+        result = build_policy_context(ctx)
+        assert result["site"] == "unknown"
+        assert result["device_role"] == "unknown"

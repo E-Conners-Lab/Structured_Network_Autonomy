@@ -18,6 +18,8 @@ from sna.devices.command_builder import CommandValidationError, create_default_c
 from sna.devices.driver import ConnectionManager, DeviceConnectionError
 from sna.devices.executor import DeviceExecutor
 from sna.integrations.mcp import MCPGateway, MCPToolCall
+from sna.validation.rules import ValidationEngine
+from sna.integrations.netbox import NetBoxClient
 from sna.integrations.notifier import create_notifier
 from sna.mcp_server.tools.read import READ_TOOLS
 from sna.mcp_server.tools.write import WRITE_TOOLS
@@ -51,11 +53,24 @@ async def create_mcp_server(settings: Settings | None = None) -> FastMCP:
 
     session_factory = create_session_factory(engine)
 
+    # Initialize NetBox client (optional)
+    netbox_client: NetBoxClient | None = None
+    if settings.netbox_url and settings.netbox_token:
+        netbox_client = NetBoxClient(
+            base_url=settings.netbox_url,
+            token=settings.netbox_token,
+            timeout=settings.httpx_timeout_seconds,
+            cache_ttl=settings.netbox_cache_ttl,
+        )
+
     # Initialize policy engine
     policy_engine = await PolicyEngine.from_config(
         policy_file_path=settings.policy_file_path,
         session_factory=session_factory,
         default_eas=settings.default_eas,
+        netbox_client=netbox_client,
+        enrichment_enabled=settings.enrichment_enabled,
+        enrichment_criticality_default=settings.enrichment_criticality_default,
     )
 
     # Initialize notifier
@@ -65,6 +80,9 @@ async def create_mcp_server(settings: Settings | None = None) -> FastMCP:
         httpx_timeout=settings.httpx_timeout_seconds,
     )
 
+    # Initialize validation engine
+    validation_engine = ValidationEngine(pyats_enabled=settings.pyats_enabled)
+
     # Initialize device layer
     gateway = MCPGateway(engine=policy_engine, notifier=notifier)
     command_builder = create_default_command_builder()
@@ -73,6 +91,8 @@ async def create_mcp_server(settings: Settings | None = None) -> FastMCP:
         command_builder=command_builder,
         connection_manager=connection_manager,
         session_factory=session_factory,
+        validation_engine=validation_engine,
+        validation_trigger_rollback=settings.validation_trigger_rollback,
     )
 
     # Create MCP server

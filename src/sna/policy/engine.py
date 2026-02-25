@@ -35,6 +35,7 @@ from sna.policy.taxonomy import (
     get_effective_threshold,
     is_hard_blocked,
 )
+from sna.integrations.netbox import NetBoxClient
 
 logger = structlog.get_logger()
 
@@ -56,10 +57,16 @@ class PolicyEngine:
         policy: PolicyConfig,
         session_factory: async_sessionmaker[AsyncSession],
         initial_eas: float,
+        netbox_client: NetBoxClient | None = None,
+        enrichment_enabled: bool = True,
+        enrichment_criticality_default: float = 0.5,
     ) -> None:
         self._policy = policy
         self._session_factory = session_factory
         self._eas = initial_eas
+        self._netbox_client = netbox_client
+        self._enrichment_enabled = enrichment_enabled
+        self._enrichment_criticality_default = enrichment_criticality_default
 
     @property
     def policy(self) -> PolicyConfig:
@@ -103,6 +110,34 @@ class PolicyEngine:
         """
         tool_name = request.tool_name
         device_count = len(request.device_targets)
+
+        # Step 0: Auto-enrich context from NetBox if available
+        if self._enrichment_enabled and self._netbox_client is not None and request.device_targets:
+            try:
+                from sna.devices.enrichment import (
+                    build_policy_context,
+                    enrich_device_context,
+                )
+
+                device_context = await enrich_device_context(
+                    request.device_targets, self._netbox_client
+                )
+                enriched = build_policy_context(
+                    device_context, self._enrichment_criticality_default
+                )
+                # Merge: caller-provided values take precedence
+                for key, value in enriched.items():
+                    if key not in request.context or request.context[key] is None:
+                        request.context[key] = value
+            except Exception:
+                await logger.awarning(
+                    "enrichment_failed",
+                    device_targets=request.device_targets,
+                    exc_info=True,
+                )
+                # Fail-closed: apply highest criticality
+                if "device_criticality" not in request.context:
+                    request.context["device_criticality"] = 1.0
 
         # Step 1: Hard block check
         if is_hard_blocked(tool_name, self._policy):
@@ -460,6 +495,9 @@ class PolicyEngine:
         policy_file_path: str,
         session_factory: async_sessionmaker[AsyncSession],
         default_eas: float,
+        netbox_client: NetBoxClient | None = None,
+        enrichment_enabled: bool = True,
+        enrichment_criticality_default: float = 0.5,
     ) -> PolicyEngine:
         """Factory method — create a PolicyEngine from configuration.
 
@@ -469,6 +507,9 @@ class PolicyEngine:
             policy_file_path: Path to the policy YAML file.
             session_factory: Async session factory for database access.
             default_eas: The initial EAS value.
+            netbox_client: Optional NetBox client for device enrichment.
+            enrichment_enabled: Whether to auto-enrich device context.
+            enrichment_criticality_default: Default criticality for unknown roles.
 
         Returns:
             A fully initialized PolicyEngine.
@@ -478,6 +519,9 @@ class PolicyEngine:
             policy=policy,
             session_factory=session_factory,
             initial_eas=default_eas,
+            netbox_client=netbox_client,
+            enrichment_enabled=enrichment_enabled,
+            enrichment_criticality_default=enrichment_criticality_default,
         )
 
         # Persist initial version

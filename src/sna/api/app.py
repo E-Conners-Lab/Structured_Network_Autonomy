@@ -25,13 +25,20 @@ from slowapi.util import get_remote_address
 from starlette.responses import FileResponse, JSONResponse
 
 from sna.api.error_handlers import register_error_handlers
-from sna.api.routes import agents, audit, eas, escalation, evaluate, executions, health, inventory, metrics, policy, reports
+from sna.api.routes import agents, audit, batch, eas, escalation, evaluate, executions, health, inventory, metrics, policy, reports
 from sna.observability.correlation import CorrelationMiddleware
 from sna.config import Settings
 from sna.db.models import Base
 from sna.db.session import create_async_engine_from_url, create_session_factory
+from sna.devices.batch import BatchExecutor
+from sna.devices.command_builder import create_default_command_builder
+from sna.devices.driver import ConnectionManager
+from sna.devices.executor import DeviceExecutor
+from sna.devices.rollback import RollbackExecutor
+from sna.integrations.netbox import NetBoxClient
 from sna.log_config import configure_logging
 from sna.policy.engine import PolicyEngine
+from sna.validation.rules import ValidationEngine
 
 logger = structlog.get_logger()
 
@@ -72,17 +79,59 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # 4. Policy engine
+    # 4. NetBox client (optional)
+    netbox_client: NetBoxClient | None = None
+    if settings.netbox_url and settings.netbox_token:
+        netbox_client = NetBoxClient(
+            base_url=settings.netbox_url,
+            token=settings.netbox_token,
+            timeout=settings.httpx_timeout_seconds,
+            cache_ttl=settings.netbox_cache_ttl,
+        )
+
+    # 5. Policy engine
     policy_engine = await PolicyEngine.from_config(
         policy_file_path=settings.policy_file_path,
         session_factory=session_factory,
         default_eas=settings.default_eas,
+        netbox_client=netbox_client,
+        enrichment_enabled=settings.enrichment_enabled,
+        enrichment_criticality_default=settings.enrichment_criticality_default,
     )
 
-    # 5. Store on app.state
+    # 6. Validation engine
+    validation_engine = ValidationEngine(pyats_enabled=settings.pyats_enabled)
+
+    # 7. Device execution infrastructure
+    command_builder = create_default_command_builder()
+    connection_manager = ConnectionManager()
+    device_executor = DeviceExecutor(
+        command_builder=command_builder,
+        connection_manager=connection_manager,
+        session_factory=session_factory,
+        validation_engine=validation_engine,
+        validation_trigger_rollback=settings.validation_trigger_rollback,
+    )
+    rollback_executor = RollbackExecutor(
+        connection_manager=connection_manager,
+        session_factory=session_factory,
+    )
+    batch_executor = BatchExecutor(
+        executor=device_executor,
+        validation_engine=validation_engine,
+        rollback_executor=rollback_executor,
+        max_parallel=5,
+    )
+
+    # 8. Store on app.state
     app.state.db_engine = engine
     app.state.session_factory = session_factory
     app.state.engine = policy_engine
+    app.state.netbox_client = netbox_client
+    app.state.validation_engine = validation_engine
+    app.state.device_executor = device_executor
+    app.state.batch_executor = batch_executor
+    app.state.connection_manager = connection_manager
 
     await logger.ainfo(
         "startup_complete",
@@ -93,7 +142,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield
 
-    # 6. Shutdown
+    # Shutdown
+    if netbox_client:
+        await netbox_client.close()
+    await connection_manager.close_all()
     await engine.dispose()
     await logger.ainfo("shutdown_complete")
 
@@ -169,6 +221,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(inventory.router)
     app.include_router(metrics.router)
     app.include_router(policy.router)
+    app.include_router(batch.router)
     app.include_router(health.router)
 
     # --- Error handlers ---

@@ -15,6 +15,22 @@ from sna.integrations.netbox import NetBoxClient, NetBoxError
 
 logger = structlog.get_logger()
 
+# Maps device roles to criticality scores for policy decisions.
+# Higher score = more critical device = stricter policy thresholds.
+CRITICALITY_MAP: dict[str, float] = {
+    "core-router": 0.9,
+    "core-switch": 0.9,
+    "distribution-router": 0.7,
+    "distribution-switch": 0.7,
+    "border-router": 0.85,
+    "firewall": 0.95,
+    "load-balancer": 0.8,
+    "access-switch": 0.3,
+    "access-point": 0.2,
+    "management": 0.4,
+    "unknown": 0.5,
+}
+
 
 @dataclass(frozen=True)
 class DeviceInfo:
@@ -102,6 +118,75 @@ def _parse_device_info(name: str, nb_device: dict) -> DeviceInfo:
         custom_fields=custom_fields,
         enriched=True,
     )
+
+
+def compute_device_criticality(
+    device_info: DeviceInfo,
+    default_criticality: float = 0.5,
+) -> float:
+    """Compute criticality score for a device based on its role.
+
+    Args:
+        device_info: Enriched device information.
+        default_criticality: Default criticality for unknown roles.
+
+    Returns:
+        Criticality score clamped to [0.0, 1.0].
+    """
+    raw = CRITICALITY_MAP.get(device_info.role, default_criticality)
+    return max(0.0, min(1.0, float(raw)))
+
+
+def build_policy_context(
+    device_context: DeviceContext,
+    default_criticality: float = 0.5,
+) -> dict[str, object]:
+    """Build a policy evaluation context dict from enriched device data.
+
+    For multiple devices, the highest criticality wins and all tags are merged.
+
+    Args:
+        device_context: Enriched device context.
+        default_criticality: Fallback criticality for unknown roles.
+
+    Returns:
+        Dict with site, device_role, device_tags, device_criticality keys.
+    """
+    if not device_context.devices:
+        return {}
+
+    max_criticality = 0.0
+    all_tags: set[str] = set()
+    sites: set[str] = set()
+    roles: set[str] = set()
+
+    for device in device_context.devices:
+        criticality = compute_device_criticality(device, default_criticality)
+        # Clamp enriched criticality to [0.0, 1.0] (security: prevents NetBox injection)
+        criticality = max(0.0, min(1.0, criticality))
+        if criticality > max_criticality:
+            max_criticality = criticality
+
+        for tag in device.tags:
+            if isinstance(tag, str):
+                all_tags.add(tag)
+
+        if device.site != "unknown" and isinstance(device.site, str):
+            sites.add(device.site)
+
+        if device.role != "unknown" and isinstance(device.role, str):
+            roles.add(device.role)
+
+    # Use the first valid site/role for single-device cases, comma-join for multi
+    site_str = ",".join(sorted(sites)) if sites else "unknown"
+    role_str = ",".join(sorted(roles)) if roles else "unknown"
+
+    return {
+        "site": site_str,
+        "device_role": role_str,
+        "device_tags": sorted(all_tags),
+        "device_criticality": max_criticality,
+    }
 
 
 async def enrich_device_context(

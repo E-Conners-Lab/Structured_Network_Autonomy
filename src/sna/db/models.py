@@ -332,14 +332,67 @@ class ExecutionLog(Base):
         Integer, ForeignKey("audit_log.id"), nullable=True
     )
 
+    # Batch grouping (nullable — only set for batch operations)
+    batch_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True
+    )
+
     __table_args__ = (
         Index("ix_execution_log_timestamp", "timestamp"),
         Index("ix_execution_log_tool_name", "tool_name"),
         Index("ix_execution_log_device_target", "device_target"),
+        Index("ix_execution_log_batch_id", "batch_id"),
     )
 
     def __repr__(self) -> str:
         return (
             f"<ExecutionLog(id={self.id}, tool={self.tool_name}, "
             f"device={self.device_target}, success={self.success})>"
+        )
+
+
+class ValidationLog(Base):
+    """Record of post-change validation results.
+
+    Persisted after each validation run. Links back to the execution
+    that triggered the validation.
+    """
+
+    __tablename__ = "validation_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    external_id: Mapped[str] = mapped_column(
+        String(36), unique=True, nullable=False, default=lambda: str(uuid4())
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    # Execution context
+    execution_log_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("execution_log.id"), nullable=True
+    )
+    tool_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    device_target: Mapped[str] = mapped_column(String(255), nullable=False)
+    testcase_name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Validation result
+    status: Mapped[str] = mapped_column(String(20), nullable=False)  # PASS/FAIL/SKIP/ERROR
+    message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    duration_seconds: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+    # Rollback tracking
+    triggered_rollback: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    __table_args__ = (
+        Index("ix_validation_log_timestamp", "timestamp"),
+        Index("ix_validation_log_execution_log_id", "execution_log_id"),
+        Index("ix_validation_log_status", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ValidationLog(id={self.id}, testcase={self.testcase_name}, "
+            f"status={self.status}, device={self.device_target})>"
         )
