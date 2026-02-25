@@ -142,6 +142,20 @@ class TagRule(BaseModel):
     reason: str = ""
 
 
+class DynamicConfidenceConfig(BaseModel):
+    """Dynamic confidence adjustment settings.
+
+    Controls how device criticality and agent history affect thresholds.
+    All defaults are 0.0, preserving backward compatibility.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_criticality_increase: float = Field(default=0.0, ge=0.0, le=0.5)
+    max_history_bonus: float = Field(default=0.0, ge=0.0, le=0.5)
+    history_window_days: int = Field(default=30, ge=1, le=365)
+
+
 class MaintenanceWindowConfig(BaseModel):
     """Maintenance window definition in policy YAML."""
 
@@ -170,6 +184,9 @@ class PolicyConfig(BaseModel):
     scope_limits: ScopeLimits
     default_tier_for_unknown: RiskTier = RiskTier.TIER_3_MEDIUM_RISK_WRITE
     hard_rules: HardRules
+
+    # Dynamic confidence adjustment (optional, defaults preserve current behavior)
+    dynamic_confidence: DynamicConfidenceConfig = Field(default_factory=DynamicConfidenceConfig)
 
     # Phase 6 — optional context-aware rules (defaults allow old YAML to load)
     site_rules: list[SiteRule] = Field(default_factory=list)
@@ -201,6 +218,7 @@ class EvaluationRequest(BaseModel):
     device_targets: list[str] = Field(default_factory=list)
     confidence_score: float = Field(ge=0.0, le=1.0)
     context: dict[str, object] = Field(default_factory=dict)
+    agent_id: int | None = None
 
     @field_validator("tool_name")
     @classmethod
@@ -234,3 +252,4 @@ class EvaluationResult(BaseModel):
     requires_audit: bool = False
     requires_senior_approval: bool = False
     escalation_id: UUID | None = None
+    matched_rules: list[str] = Field(default_factory=list)

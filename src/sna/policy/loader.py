@@ -7,6 +7,7 @@ Uses aiofiles for non-blocking file I/O.
 from __future__ import annotations
 
 import difflib
+import hashlib
 
 import aiofiles
 import structlog
@@ -95,6 +96,18 @@ async def reload_policy(
             )
 
     return new_policy, diff_text
+
+
+def compute_policy_hash(yaml_content: str) -> str:
+    """Compute SHA-256 hash of policy YAML content.
+
+    Args:
+        yaml_content: The raw YAML string.
+
+    Returns:
+        Hex-encoded SHA-256 hash.
+    """
+    return hashlib.sha256(yaml_content.encode("utf-8")).hexdigest()
 
 
 def compute_policy_diff(old: PolicyConfig, new: PolicyConfig) -> str | None:

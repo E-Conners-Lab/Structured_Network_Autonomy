@@ -15,8 +15,12 @@ from uuid import uuid4
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from sna.db.models import AuditLog, EscalationRecord
-from sna.policy.loader import load_policy, reload_policy
+import aiofiles
+
+from sqlalchemy import select
+
+from sna.db.models import AgentPolicyOverride, AuditLog, EscalationRecord, PolicyVersion
+from sna.policy.loader import compute_policy_hash, load_policy, reload_policy
 from sna.policy.models import (
     EvaluationRequest,
     EvaluationResult,
@@ -24,6 +28,7 @@ from sna.policy.models import (
     RiskTier,
     Verdict,
 )
+from sna.policy.context_rules import evaluate_agent_overrides, evaluate_context_rules, merge_verdicts
 from sna.policy.taxonomy import (
     check_scope_escalation,
     classify_tool,
@@ -116,8 +121,60 @@ class PolicyEngine:
         tier = classify_tool(tool_name, self._policy)
         tier_config = self._policy.action_tiers[tier]
 
-        # Step 3: Get effective threshold
-        threshold = get_effective_threshold(tier, self._policy, self._eas)
+        # Step 3: Get effective threshold (with dynamic confidence adjustments)
+        device_criticality = 0.0
+        raw_criticality = request.context.get("device_criticality")
+        if isinstance(raw_criticality, (int, float)):
+            device_criticality = max(0.0, min(1.0, float(raw_criticality)))
+
+        history_factor = await self._compute_history_factor(request.agent_id)
+
+        threshold = get_effective_threshold(
+            tier, self._policy, self._eas,
+            device_criticality=device_criticality,
+            history_factor=history_factor,
+        )
+
+        # Step 3.5: Context rule check (site/role/tag)
+        context_verdict, matched_rules = evaluate_context_rules(
+            request.context, tool_name, tier, self._policy,
+        )
+        matched_rule_strs = [
+            f"{m.rule_type}:{m.match_value}→{m.verdict.value}" for m in matched_rules
+        ]
+
+        # Step 3.6: Agent-specific overrides (can only be more restrictive)
+        agent_override_verdict: Verdict | None = None
+        if request.agent_id is not None:
+            try:
+                agent_overrides = await self._fetch_agent_overrides(request.agent_id)
+                if agent_overrides:
+                    agent_override_verdict, agent_matches = evaluate_agent_overrides(
+                        agent_overrides, request.context, tool_name, tier,
+                    )
+                    matched_rules.extend(agent_matches)
+                    matched_rule_strs.extend(
+                        f"{m.rule_type}:{m.match_value}→{m.verdict.value}" for m in agent_matches
+                    )
+            except Exception:
+                await logger.awarning("agent_override_fetch_failed", agent_id=request.agent_id)
+
+        # Merge global context verdict with agent override verdict
+        final_context_verdict = merge_verdicts(context_verdict, agent_override_verdict)
+
+        if final_context_verdict in (Verdict.BLOCK, Verdict.ESCALATE):
+            all_context_matches = matched_rules
+            reason_parts = [f"Context rule: {m.reason}" for m in all_context_matches if m.verdict == final_context_verdict]
+            return await self._finalize(
+                request=request,
+                verdict=final_context_verdict,
+                risk_tier=tier,
+                reason=reason_parts[0] if reason_parts else f"Context rule override → {final_context_verdict.value}",
+                confidence_threshold=threshold,
+                device_count=device_count,
+                requires_senior_approval=tier_config.requires_senior_approval if final_context_verdict == Verdict.ESCALATE else False,
+                matched_rules=matched_rule_strs,
+            )
 
         # Step 4: Check scope escalation
         if check_scope_escalation(device_count, self._policy):
@@ -180,6 +237,7 @@ class PolicyEngine:
         device_count: int,
         requires_audit: bool = False,
         requires_senior_approval: bool = False,
+        matched_rules: list[str] | None = None,
     ) -> EvaluationResult:
         """Write audit log, create escalation if needed, and return result.
 
@@ -264,17 +322,21 @@ class PolicyEngine:
             requires_audit=requires_audit,
             requires_senior_approval=requires_senior_approval,
             escalation_id=UUID(escalation_id) if escalation_id else None,
+            matched_rules=matched_rules or [],
         )
 
-    async def reload(self, file_path: str) -> tuple[PolicyConfig, str | None]:
-        """Hot reload the policy from YAML.
+    async def reload(
+        self, file_path: str, *, created_by: str = "system",
+    ) -> tuple[PolicyConfig, str | None]:
+        """Hot reload the policy from YAML and persist a version record.
 
         Loads the new policy, computes a diff against the current policy,
-        and swaps the active policy. If loading fails, the current policy
-        remains unchanged.
+        persists a PolicyVersion to the database, and swaps the active policy.
+        If loading fails, the current policy remains unchanged.
 
         Args:
             file_path: Path to the policy YAML file.
+            created_by: Who triggered the reload.
 
         Returns:
             A tuple of (new_policy, diff_text).
@@ -285,8 +347,112 @@ class PolicyEngine:
             pydantic.ValidationError: If validation fails.
         """
         new_policy, diff_text = await reload_policy(file_path, self._policy)
+
+        # Read raw YAML for versioning
+        async with aiofiles.open(file_path, mode="r", encoding="utf-8") as f:
+            raw_yaml = await f.read()
+
+        await self._persist_version(
+            policy=new_policy,
+            raw_yaml=raw_yaml,
+            diff_text=diff_text,
+            created_by=created_by,
+        )
+
         self._policy = new_policy
         return new_policy, diff_text
+
+    async def _compute_history_factor(self, agent_id: int | None) -> float:
+        """Compute history factor from agent's recent verdict history.
+
+        Returns 0.0 if no agent_id or no history.
+        """
+        if agent_id is None:
+            return 0.0
+
+        dc = self._policy.dynamic_confidence
+        if dc.max_history_bonus <= 0.0:
+            return 0.0
+
+        try:
+            from datetime import UTC, datetime, timedelta
+
+            cutoff = datetime.now(UTC) - timedelta(days=dc.history_window_days)
+            async with self._session_factory() as session:
+                result = await session.execute(
+                    select(AuditLog.verdict, AuditLog.timestamp)
+                    .where(
+                        AuditLog.agent_id == agent_id,
+                        AuditLog.timestamp >= cutoff,
+                    )
+                )
+                rows = result.all()
+
+            if not rows:
+                return 0.0
+
+            from sna.policy.confidence import compute_history_factor
+
+            verdicts = [(row[0], row[1]) for row in rows]
+            return compute_history_factor(verdicts, dc.history_window_days)
+        except Exception:
+            return 0.0
+
+    async def _fetch_agent_overrides(self, agent_id: int) -> list[dict]:
+        """Fetch active policy overrides for an agent from the database."""
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(AgentPolicyOverride)
+                .where(
+                    AgentPolicyOverride.agent_id == agent_id,
+                    AgentPolicyOverride.is_active.is_(True),
+                )
+                .order_by(AgentPolicyOverride.priority.desc())
+            )
+            overrides = result.scalars().all()
+            return [
+                {
+                    "rule_type": o.rule_type,
+                    "rule_json": o.rule_json,
+                    "priority": o.priority,
+                }
+                for o in overrides
+            ]
+
+    async def _persist_version(
+        self,
+        *,
+        policy: PolicyConfig,
+        raw_yaml: str,
+        diff_text: str | None = None,
+        created_by: str = "system",
+    ) -> PolicyVersion | None:
+        """Persist a policy version to the database.
+
+        Returns the created PolicyVersion, or None if persistence fails.
+        Version persistence failures are logged but do not block operation.
+        """
+        try:
+            policy_hash = compute_policy_hash(raw_yaml)
+            async with self._session_factory() as session:
+                async with session.begin():
+                    version = PolicyVersion(
+                        version_string=policy.version,
+                        policy_yaml=raw_yaml,
+                        policy_hash=policy_hash,
+                        diff_text=diff_text,
+                        created_by=created_by,
+                    )
+                    session.add(version)
+                    await session.flush()
+                    return version
+        except Exception:
+            await logger.awarning(
+                "policy_version_persist_failed",
+                version=policy.version,
+                exc_info=True,
+            )
+            return None
 
     @classmethod
     async def from_config(
@@ -297,7 +463,7 @@ class PolicyEngine:
     ) -> PolicyEngine:
         """Factory method — create a PolicyEngine from configuration.
 
-        Loads the policy YAML and initializes the engine.
+        Loads the policy YAML, persists the initial version, and initializes the engine.
 
         Args:
             policy_file_path: Path to the policy YAML file.
@@ -308,8 +474,21 @@ class PolicyEngine:
             A fully initialized PolicyEngine.
         """
         policy = await load_policy(policy_file_path)
-        return cls(
+        engine = cls(
             policy=policy,
             session_factory=session_factory,
             initial_eas=default_eas,
         )
+
+        # Persist initial version
+        async with aiofiles.open(policy_file_path, mode="r", encoding="utf-8") as f:
+            raw_yaml = await f.read()
+
+        await engine._persist_version(
+            policy=policy,
+            raw_yaml=raw_yaml,
+            diff_text=None,
+            created_by="system_init",
+        )
+
+        return engine

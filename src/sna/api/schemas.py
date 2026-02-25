@@ -77,6 +77,7 @@ class EvaluateResponse(BaseModel):
     requires_audit: bool
     requires_senior_approval: bool
     escalation_id: UUID | None = None
+    matched_rules: list[str] = Field(default_factory=list)
 
 
 # --- Escalation endpoints ---
@@ -168,7 +169,43 @@ class PolicyReloadResponse(BaseModel):
     diff: str | None = None
 
 
+class PolicyVersionResponse(BaseModel):
+    """Policy version history entry."""
+
+    external_id: UUID
+    version_string: str
+    policy_hash: str
+    diff_text: str | None = None
+    created_at: datetime
+    created_by: str
+
+
+class PolicyCurrentResponse(BaseModel):
+    """Current policy version info."""
+
+    version: str
+    policy_hash: str | None = None
+
+
+class PolicyRollbackResponse(BaseModel):
+    """POST /policy/rollback response body."""
+
+    status: str
+    version: str
+    rolled_back_to: UUID
+
+
 # --- Health endpoint ---
+
+
+class ReputationResponse(BaseModel):
+    """Agent reputation score breakdown."""
+
+    agent_id: UUID
+    eas_component: float
+    verdict_component: float
+    execution_component: float
+    composite_score: float
 
 
 class HealthMinimalResponse(BaseModel):

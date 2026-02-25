@@ -20,7 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sna.api.auth import require_admin_key, require_api_key
 from sna.api.dependencies import get_session_factory
 from sna.api.schemas import PaginatedResponse, PaginationParams
-from sna.db.models import Agent, AgentStatus, EASHistory
+from sna.api.schemas import ReputationResponse
+from sna.db.models import Agent, AgentPolicyOverride, AgentStatus, EASHistory
+from sna.policy.reputation import compute_agent_reputation
 
 logger = structlog.get_logger()
 
@@ -262,6 +264,160 @@ async def get_agent_activity(
         eas=agent.eas,
         status=agent.status,
     )
+
+
+# --- Override schemas ---
+
+
+class OverrideCreateRequest(BaseModel):
+    """POST /agents/{id}/overrides request body."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    rule_type: str = Field(pattern="^(site|role|tag|tool)$")
+    rule_json: dict = Field(default_factory=dict)
+    priority: int = Field(default=0, ge=0, le=100)
+
+
+class OverrideResponse(BaseModel):
+    """Override entry in API responses."""
+
+    external_id: str
+    rule_type: str
+    rule_json: dict
+    priority: int
+    is_active: bool
+    created_at: datetime
+
+
+# --- Override endpoints ---
+
+
+@router.post("/agents/{agent_id}/overrides", response_model=OverrideResponse, status_code=201)
+async def create_override(
+    request: Request,
+    agent_id: UUID,
+    body: OverrideCreateRequest,
+    _admin_key: str = Depends(require_admin_key),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> OverrideResponse:
+    """Create a policy override for an agent. Admin only."""
+    async with session_factory() as session:
+        async with session.begin():
+            # Find agent
+            result = await session.execute(
+                select(Agent).where(Agent.external_id == str(agent_id))
+            )
+            agent = result.scalar_one_or_none()
+            if agent is None:
+                raise HTTPException(status_code=404, detail="Agent not found")
+
+            override = AgentPolicyOverride(
+                agent_id=agent.id,
+                rule_type=body.rule_type,
+                rule_json=body.rule_json,
+                priority=body.priority,
+            )
+            session.add(override)
+            await session.flush()
+
+            return OverrideResponse(
+                external_id=override.external_id,
+                rule_type=override.rule_type,
+                rule_json=override.rule_json,
+                priority=override.priority,
+                is_active=override.is_active,
+                created_at=override.created_at,
+            )
+
+
+@router.get("/agents/{agent_id}/overrides", response_model=list[OverrideResponse])
+async def list_overrides(
+    request: Request,
+    agent_id: UUID,
+    _api_key: str = Depends(require_api_key),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> list[OverrideResponse]:
+    """List policy overrides for an agent."""
+    async with session_factory() as session:
+        # Find agent
+        agent_result = await session.execute(
+            select(Agent).where(Agent.external_id == str(agent_id))
+        )
+        agent = agent_result.scalar_one_or_none()
+        if agent is None:
+            raise HTTPException(status_code=404, detail="Agent not found")
+
+        result = await session.execute(
+            select(AgentPolicyOverride)
+            .where(AgentPolicyOverride.agent_id == agent.id)
+            .order_by(AgentPolicyOverride.priority.desc())
+        )
+        overrides = result.scalars().all()
+
+    return [
+        OverrideResponse(
+            external_id=o.external_id,
+            rule_type=o.rule_type,
+            rule_json=o.rule_json,
+            priority=o.priority,
+            is_active=o.is_active,
+            created_at=o.created_at,
+        )
+        for o in overrides
+    ]
+
+
+@router.get("/agents/{agent_id}/reputation", response_model=ReputationResponse)
+async def get_agent_reputation(
+    request: Request,
+    agent_id: UUID,
+    _api_key: str = Depends(require_api_key),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> ReputationResponse:
+    """Get agent reputation score breakdown."""
+    async with session_factory() as session:
+        result = await session.execute(
+            select(Agent).where(Agent.external_id == str(agent_id))
+        )
+        agent = result.scalar_one_or_none()
+
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    components = await compute_agent_reputation(agent.id, session_factory)
+
+    return ReputationResponse(
+        agent_id=agent_id,
+        eas_component=components.eas_component,
+        verdict_component=components.verdict_component,
+        execution_component=components.execution_component,
+        composite_score=components.composite_score,
+    )
+
+
+@router.delete("/agents/{agent_id}/overrides/{override_id}", status_code=200)
+async def deactivate_override(
+    request: Request,
+    agent_id: UUID,
+    override_id: UUID,
+    _admin_key: str = Depends(require_admin_key),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> dict:
+    """Deactivate a policy override for an agent. Admin only."""
+    async with session_factory() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(AgentPolicyOverride)
+                .where(AgentPolicyOverride.external_id == str(override_id))
+            )
+            override = result.scalar_one_or_none()
+            if override is None:
+                raise HTTPException(status_code=404, detail="Override not found")
+
+            override.is_active = False
+
+    return {"status": "deactivated", "override_id": str(override_id)}
 
 
 async def _set_agent_status(

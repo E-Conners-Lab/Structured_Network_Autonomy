@@ -25,12 +25,17 @@ async def evaluate_action(
     Classifies the action, checks confidence thresholds and scope limits,
     and returns a PERMIT, ESCALATE, or BLOCK verdict.
     """
+    # Extract agent identity from auth if available
+    agent = getattr(request.state, "agent", None)
+    agent_id = agent.id if agent else None
+
     eval_request = EvaluationRequest(
         tool_name=body.tool_name,
         parameters=body.parameters,
         device_targets=body.device_targets,
         confidence_score=body.confidence_score,
         context=body.context,
+        agent_id=agent_id,
     )
 
     result = await engine.evaluate(eval_request)
@@ -46,4 +51,5 @@ async def evaluate_action(
         requires_audit=result.requires_audit,
         requires_senior_approval=result.requires_senior_approval,
         escalation_id=result.escalation_id,
+        matched_rules=result.matched_rules,
     )

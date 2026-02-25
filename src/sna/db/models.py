@@ -211,8 +211,14 @@ class EASHistory(Base):
     change_reason: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[str] = mapped_column(String(255), nullable=False)
 
+    # Agent identity (nullable — global EAS changes have no agent)
+    agent_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("agent.id"), nullable=True
+    )
+
     __table_args__ = (
         Index("ix_eas_history_timestamp", "timestamp"),
+        Index("ix_eas_history_agent_id", "agent_id"),
     )
 
     def __repr__(self) -> str:
@@ -220,6 +226,74 @@ class EASHistory(Base):
             f"<EASHistory(id={self.id}, score={self.eas_score}, "
             f"prev={self.previous_score})>"
         )
+
+
+class AgentPolicyOverride(Base):
+    """Agent-specific policy rule override.
+
+    Overrides can only be MORE restrictive than global policy.
+    An override that would relax a BLOCK is not applied.
+    """
+
+    __tablename__ = "agent_policy_override"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    external_id: Mapped[str] = mapped_column(
+        String(36), unique=True, nullable=False, default=lambda: str(uuid4())
+    )
+    agent_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("agent.id"), nullable=False
+    )
+    rule_type: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # "site", "role", "tag", "tool"
+    rule_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    __table_args__ = (
+        Index("ix_agent_policy_override_agent_id", "agent_id"),
+        Index("ix_agent_policy_override_active", "is_active"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AgentPolicyOverride(id={self.id}, agent_id={self.agent_id}, "
+            f"rule_type={self.rule_type}, active={self.is_active})>"
+        )
+
+
+class PolicyVersion(Base):
+    """Immutable version history of every policy reload.
+
+    Each entry represents a snapshot of the policy at a point in time.
+    Rollback creates a new version entry (rollback is versioned).
+    """
+
+    __tablename__ = "policy_version"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    external_id: Mapped[str] = mapped_column(
+        String(36), unique=True, nullable=False, default=lambda: str(uuid4())
+    )
+    version_string: Mapped[str] = mapped_column(String(255), nullable=False)
+    policy_yaml: Mapped[str] = mapped_column(Text, nullable=False)
+    policy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    diff_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False, default="system")
+
+    __table_args__ = (
+        Index("ix_policy_version_created_at", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<PolicyVersion(id={self.id}, version={self.version_string}, hash={self.policy_hash[:12]})>"
 
 
 class ExecutionLog(Base):

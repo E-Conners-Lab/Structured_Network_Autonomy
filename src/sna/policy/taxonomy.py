@@ -38,40 +38,45 @@ def get_effective_threshold(
     tier: RiskTier,
     policy: PolicyConfig,
     current_eas: float,
+    *,
+    device_criticality: float = 0.0,
+    history_factor: float = 0.0,
 ) -> float:
-    """Compute the effective confidence threshold after EAS modulation.
+    """Compute the effective confidence threshold after EAS and dynamic modulation.
 
-    Higher EAS reduces the threshold (grants more latitude). Lower EAS
-    keeps the threshold at its base value.
+    Formula:
+        effective = base - eas_reduction + (criticality * max_criticality_increase)
+                    - (history_factor * max_history_bonus)
 
-    The reduction formula:
-        reduction = max_threshold_reduction * current_eas
-        effective = base_threshold - reduction
-
-    Modulation only applies when:
-        - eas_modulation.enabled is True
-        - current_eas >= eas_modulation.min_eas_for_modulation
+    EAS modulation only applies when enabled and EAS >= min_eas_for_modulation.
+    Dynamic confidence adjustments only apply when max values are > 0.
 
     The effective threshold is clamped to [0.0, 1.0].
 
     Args:
         tier: The risk tier to get the threshold for.
         policy: The loaded policy configuration.
-        current_eas: The agent's current Earned Autonomy Score (0.0–1.0).
+        current_eas: The agent's current Earned Autonomy Score (0.0-1.0).
+        device_criticality: Device criticality level (0.0-1.0). Higher = more critical.
+        history_factor: Agent history factor (0.0-1.0). Higher = better track record.
 
     Returns:
         The effective confidence threshold as a float.
     """
     base_threshold = policy.confidence_thresholds.get_threshold(tier)
 
-    if not policy.eas_modulation.enabled:
-        return base_threshold
+    # EAS modulation
+    eas_reduction = 0.0
+    if policy.eas_modulation.enabled:
+        if current_eas >= policy.eas_modulation.min_eas_for_modulation:
+            eas_reduction = policy.eas_modulation.max_threshold_reduction * current_eas
 
-    if current_eas < policy.eas_modulation.min_eas_for_modulation:
-        return base_threshold
+    # Dynamic confidence adjustments
+    dc = policy.dynamic_confidence
+    criticality_increase = device_criticality * dc.max_criticality_increase
+    history_bonus = history_factor * dc.max_history_bonus
 
-    reduction = policy.eas_modulation.max_threshold_reduction * current_eas
-    effective = base_threshold - reduction
+    effective = base_threshold - eas_reduction + criticality_increase - history_bonus
     return max(0.0, min(1.0, effective))
 
 

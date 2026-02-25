@@ -190,5 +190,6 @@ class TestEvaluateEndpoint:
             "verdict", "risk_tier", "tool_name", "reason",
             "confidence_score", "confidence_threshold", "device_count",
             "requires_audit", "requires_senior_approval", "escalation_id",
+            "matched_rules",
         }
         assert expected_keys == set(data.keys())
