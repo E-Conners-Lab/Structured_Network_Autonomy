@@ -33,9 +33,23 @@ _PASSWORD_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(?i)(enable\s+secret\s+\d+\s+)\S+"),
     # Username password
     re.compile(r"(?i)(username\s+\S+\s+(?:password|secret)\s+\d+\s+)\S+"),
+    # BGP neighbor password
+    re.compile(r"(?i)(neighbor\s+\S+\s+password\s+)\S+"),
+    # OSPF authentication key
+    re.compile(r"(?i)(ip\s+ospf\s+authentication-key\s+)\S+"),
+    # OSPF message-digest key
+    re.compile(r"(?i)(ip\s+ospf\s+message-digest-key\s+\d+\s+md5\s+)\S+"),
+    # EIGRP authentication
+    re.compile(r"(?i)(authentication\s+key-string\s+)\S+"),
+    # RADIUS server key
+    re.compile(r"(?i)(radius-server\s+key\s+)\S+"),
+    # Standby authentication (HSRP)
+    re.compile(r"(?i)(standby\s+\d+\s+authentication\s+)\S+"),
 ]
 
 _REDACTED = "***REDACTED***"
+
+_MAX_SANITIZE_INPUT = 65_536  # 64KB max (ReDoS protection)
 
 
 def sanitize_output(output: str) -> str:
@@ -47,7 +61,7 @@ def sanitize_output(output: str) -> str:
     Returns:
         Sanitized output with credentials replaced by ***REDACTED***.
     """
-    result = output
+    result = output[:_MAX_SANITIZE_INPUT]
     for pattern in _PASSWORD_PATTERNS:
         result = pattern.sub(rf"\g<1>{_REDACTED}", result)
     return result

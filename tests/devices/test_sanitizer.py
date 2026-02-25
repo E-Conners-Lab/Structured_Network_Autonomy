@@ -66,3 +66,44 @@ class TestSanitizeOutput:
         output = "ntp authentication-key 1 md5 NTPSECRET"
         result = sanitize_output(output)
         assert "NTPSECRET" not in result
+
+    def test_bgp_neighbor_password_redacted(self) -> None:
+        output = "neighbor 10.0.0.1 password BGP_SECRET_123"
+        result = sanitize_output(output)
+        assert "BGP_SECRET_123" not in result
+        assert "***REDACTED***" in result
+
+    def test_ospf_auth_key_redacted(self) -> None:
+        output = "ip ospf authentication-key OSPF_KEY_456"
+        result = sanitize_output(output)
+        assert "OSPF_KEY_456" not in result
+        assert "***REDACTED***" in result
+
+    def test_ospf_message_digest_redacted(self) -> None:
+        output = "ip ospf message-digest-key 1 md5 MD5_KEY_789"
+        result = sanitize_output(output)
+        assert "MD5_KEY_789" not in result
+
+    def test_eigrp_auth_key_redacted(self) -> None:
+        output = "authentication key-string EIGRP_SECRET"
+        result = sanitize_output(output)
+        assert "EIGRP_SECRET" not in result
+
+    def test_radius_server_key_redacted(self) -> None:
+        output = "radius-server key RADIUS_SECRET_KEY"
+        result = sanitize_output(output)
+        assert "RADIUS_SECRET_KEY" not in result
+        assert "***REDACTED***" in result
+
+    def test_hsrp_auth_redacted(self) -> None:
+        output = "standby 1 authentication HSRP_AUTH"
+        result = sanitize_output(output)
+        assert "HSRP_AUTH" not in result
+
+    def test_input_truncated_at_64kb(self) -> None:
+        """Input larger than 64KB should be truncated."""
+        from sna.devices.sanitizer import _MAX_SANITIZE_INPUT
+
+        large_output = "x" * (2 * _MAX_SANITIZE_INPUT)
+        result = sanitize_output(large_output)
+        assert len(result) == _MAX_SANITIZE_INPUT

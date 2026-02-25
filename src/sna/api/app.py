@@ -102,9 +102,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # 6. Validation engine
     validation_engine = ValidationEngine(pyats_enabled=settings.pyats_enabled)
 
-    # 7. Device execution infrastructure
+    # 7. Vault client (optional)
+    vault_client = None
+    if settings.vault_addr and settings.vault_token:
+        from sna.integrations.vault import VaultClient
+
+        vault_client = VaultClient(
+            addr=settings.vault_addr,
+            token=settings.vault_token,
+            mount_path=settings.vault_mount_path,
+            tls_verify=settings.vault_tls_verify,
+            cache_ttl=settings.vault_cache_ttl,
+            timeout=settings.httpx_timeout_seconds,
+        )
+
+    # 8. Device execution infrastructure
     command_builder = create_default_command_builder()
-    connection_manager = ConnectionManager()
+    connection_manager = ConnectionManager(vault_client=vault_client)
     device_executor = DeviceExecutor(
         command_builder=command_builder,
         connection_manager=connection_manager,
@@ -123,7 +137,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         max_parallel=5,
     )
 
-    # 8. Store on app.state
+    # 9. OpenTelemetry (optional)
+    if settings.otel_enabled:
+        from sna.observability.tracing import init_tracer
+
+        init_tracer(
+            service_name=settings.otel_service_name,
+            endpoint=settings.otel_endpoint,
+        )
+
+    # 10. Store on app.state
     app.state.db_engine = engine
     app.state.session_factory = session_factory
     app.state.engine = policy_engine
@@ -143,6 +166,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     # Shutdown
+    if vault_client:
+        await vault_client.close()
     if netbox_client:
         await netbox_client.close()
     await connection_manager.close_all()

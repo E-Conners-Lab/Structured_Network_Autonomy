@@ -115,17 +115,23 @@ class CompositeNotifier:
 def create_notifier(
     discord_webhook_url: str | None = None,
     teams_webhook_url: str | None = None,
+    slack_webhook_url: str | None = None,
+    pagerduty_routing_key: str | None = None,
+    pagerduty_api_url: str = "https://events.pagerduty.com/v2/enqueue",
     httpx_timeout: float = 10.0,
 ) -> CompositeNotifier:
     """Factory — build a CompositeNotifier from configured webhook URLs.
 
-    Only backends with a configured URL are included. If no URLs are
+    Only backends with a configured URL/key are included. If nothing is
     configured, the composite notifier has no backends (notifications
     are silently skipped).
 
     Args:
         discord_webhook_url: Discord webhook URL, or None to skip.
         teams_webhook_url: Teams webhook URL, or None to skip.
+        slack_webhook_url: Slack Incoming Webhook URL, or None to skip.
+        pagerduty_routing_key: PagerDuty Events API v2 routing key, or None to skip.
+        pagerduty_api_url: PagerDuty Events API URL.
         httpx_timeout: HTTP request timeout in seconds.
 
     Returns:
@@ -145,6 +151,23 @@ def create_notifier(
     if teams_webhook_url:
         notifiers.append(TeamsNotifier(
             webhook_url=teams_webhook_url,
+            timeout=httpx_timeout,
+        ))
+
+    if slack_webhook_url:
+        from sna.integrations.slack import SlackNotifier
+
+        notifiers.append(SlackNotifier(
+            webhook_url=slack_webhook_url,
+            timeout=httpx_timeout,
+        ))
+
+    if pagerduty_routing_key:
+        from sna.integrations.pagerduty import PagerDutyNotifier
+
+        notifiers.append(PagerDutyNotifier(
+            routing_key=pagerduty_routing_key,
+            api_url=pagerduty_api_url,
             timeout=httpx_timeout,
         ))
 

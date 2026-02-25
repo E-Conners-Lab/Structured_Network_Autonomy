@@ -21,6 +21,16 @@ from sna.devices.registry import DriverConfig, Platform
 logger = structlog.get_logger()
 
 
+def _sanitize_error(error_msg: str) -> str:
+    """Remove potential credential fragments from error messages."""
+    import re
+
+    msg = re.sub(r"(?i)for user ['\"]?\S+['\"]?", "for user ***", error_msg)
+    msg = re.sub(r"(?i)password\s*[:=]\s*\S+", "password=***", msg)
+    msg = re.sub(r"(?i)auth(entication)?\s+failed.*", "authentication failed", msg)
+    return msg
+
+
 @dataclass
 class CommandResult:
     """Result of executing a command on a device."""
@@ -146,14 +156,15 @@ class DevicePool:
 
         except Exception as exc:
             elapsed = time.monotonic() - start
+            safe_error = _sanitize_error(str(exc))
             await logger.aerror(
                 "device_connection_error",
                 host=self._config.host,
-                error=str(exc),
+                error=safe_error,
                 elapsed=elapsed,
             )
             raise DeviceConnectionError(
-                f"Failed to execute on {self._config.host}: {exc}"
+                f"Failed to execute on {self._config.host}: {safe_error}"
             ) from exc
 
     async def close(self) -> None:
@@ -170,14 +181,19 @@ class ConnectionManager:
         max_concurrent_per_device: Max concurrent sessions per device.
     """
 
-    def __init__(self, max_concurrent_per_device: int = 3) -> None:
+    def __init__(
+        self,
+        max_concurrent_per_device: int = 3,
+        vault_client: object | None = None,
+    ) -> None:
         self._pools: dict[str, DevicePool] = {}
         self._max_concurrent = max_concurrent_per_device
+        self._vault_client = vault_client
 
-    def get_pool(self, device_name: str, platform: Platform) -> DevicePool:
+    async def get_pool(self, device_name: str, platform: Platform) -> DevicePool:
         """Get or create a connection pool for a device.
 
-        Credentials are loaded from environment variables:
+        Credentials are loaded from Vault (if configured) or environment variables:
         SNA_DEVICE_{NAME}_USERNAME and SNA_DEVICE_{NAME}_PASSWORD.
 
         Args:
@@ -191,8 +207,33 @@ class ConnectionManager:
             return self._pools[device_name]
 
         env_name = device_name.upper().replace("-", "_").replace(".", "_")
-        username = os.environ.get(f"SNA_DEVICE_{env_name}_USERNAME", "")
-        password = os.environ.get(f"SNA_DEVICE_{env_name}_PASSWORD", "")
+        username: str | None = None
+        password: str | None = None
+
+        # Try Vault first if configured
+        if self._vault_client is not None:
+            try:
+                creds = await self._vault_client.read_device_credentials(device_name)
+                if creds is not None:
+                    username, password = creds
+            except Exception:
+                await logger.awarning(
+                    "vault_credential_fetch_failed",
+                    device=device_name,
+                )
+
+        # Fall back to environment variables
+        if username is None:
+            username = os.environ.get(f"SNA_DEVICE_{env_name}_USERNAME", "")
+        if password is None:
+            password = os.environ.get(f"SNA_DEVICE_{env_name}_PASSWORD", "")
+
+        if not username or not password:
+            await logger.awarning(
+                "device_credentials_missing",
+                device=device_name,
+                env_username_var=f"SNA_DEVICE_{env_name}_USERNAME",
+            )
 
         config = DriverConfig(
             platform=platform,

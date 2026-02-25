@@ -7,6 +7,7 @@ External X-Correlation-ID is logged as client_correlation_id separately.
 
 from __future__ import annotations
 
+import re
 from uuid import uuid4
 
 import structlog
@@ -15,6 +16,8 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 
 CORRELATION_HEADER = "X-Correlation-ID"
 CLIENT_CORRELATION_HEADER = "X-Client-Correlation-ID"
+
+_CORRELATION_PATTERN = re.compile(r"^[a-zA-Z0-9_\-]{1,64}$")
 
 
 def generate_correlation_id() -> str:
@@ -39,7 +42,7 @@ class CorrelationMiddleware(BaseHTTPMiddleware):
         correlation_id = generate_correlation_id()
         request.state.correlation_id = correlation_id
 
-        # Log client's correlation ID separately (if provided)
+        # Log client's correlation ID separately (if provided and valid)
         client_correlation = request.headers.get(CORRELATION_HEADER, "")
 
         # Bind to structlog context
@@ -47,7 +50,7 @@ class CorrelationMiddleware(BaseHTTPMiddleware):
         structlog.contextvars.bind_contextvars(
             correlation_id=correlation_id,
         )
-        if client_correlation:
+        if client_correlation and _CORRELATION_PATTERN.match(client_correlation):
             structlog.contextvars.bind_contextvars(
                 client_correlation_id=client_correlation,
             )

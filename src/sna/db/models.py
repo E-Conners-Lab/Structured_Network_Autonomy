@@ -50,6 +50,7 @@ class Agent(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     api_key_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    api_key_prefix: Mapped[str] = mapped_column(String(8), nullable=False, default="")
     eas: Mapped[float] = mapped_column(Float, nullable=False, default=0.1)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default=AgentStatus.ACTIVE.value
@@ -64,6 +65,7 @@ class Agent(Base):
     __table_args__ = (
         Index("ix_agent_name", "name"),
         Index("ix_agent_status", "status"),
+        Index("ix_agent_api_key_prefix", "api_key_prefix"),
     )
 
     def __repr__(self) -> str:

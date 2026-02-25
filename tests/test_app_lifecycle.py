@@ -21,8 +21,8 @@ from sna.db.session import (
 )
 from sna.policy.engine import PolicyEngine
 
-TEST_API_KEY = "lifecycle-test-key-123"
-TEST_ADMIN_KEY = "lifecycle-admin-key-456"
+TEST_API_KEY = "lifecycle-test-key-123-abcdefghijklmn"
+TEST_ADMIN_KEY = "lifecycle-admin-key-456-abcdefghijkl"
 
 
 @pytest.fixture
@@ -341,8 +341,8 @@ class TestConfigValidation:
         with pytest.raises(Exception):
             Settings(
                 database_url="sqlite+aiosqlite:///:memory:",
-                sna_api_key="key",
-                sna_admin_api_key="admin",
+                sna_api_key="a" * 32,
+                sna_admin_api_key="b" * 32,
                 default_eas=1.5,
             )
 
@@ -350,19 +350,21 @@ class TestConfigValidation:
         """Comma-separated CORS origins should be parsed into a list."""
         s = Settings(
             database_url="sqlite+aiosqlite:///:memory:",
-            sna_api_key="key",
-            sna_admin_api_key="admin",
+            sna_api_key="a" * 32,
+            sna_admin_api_key="b" * 32,
             cors_allowed_origins="http://localhost:3000,http://localhost:8080",
         )
         assert s.cors_origins_list == ["http://localhost:3000", "http://localhost:8080"]
 
     def test_valid_settings(self) -> None:
         """Valid settings should construct without error."""
+        valid_key = "valid-key-" + "x" * 22
+        valid_admin = "valid-admin-" + "x" * 20
         s = Settings(
             database_url="sqlite+aiosqlite:///:memory:",
-            sna_api_key="valid-key",
-            sna_admin_api_key="valid-admin",
+            sna_api_key=valid_key,
+            sna_admin_api_key=valid_admin,
             default_eas=0.5,
         )
-        assert s.sna_api_key == "valid-key"
+        assert s.sna_api_key == valid_key
         assert s.default_eas == 0.5

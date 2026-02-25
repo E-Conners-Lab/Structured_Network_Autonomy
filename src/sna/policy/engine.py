@@ -108,6 +108,18 @@ class PolicyEngine:
         Returns:
             An EvaluationResult with the verdict and full context.
         """
+        from sna.observability.tracing import span, add_span_attributes
+
+        with span("sna.policy.evaluate", attributes={
+            "tool_name": request.tool_name,
+            "device_count": len(request.device_targets),
+        }):
+            return await self._evaluate_inner(request)
+
+    async def _evaluate_inner(self, request: EvaluationRequest) -> EvaluationResult:
+        """Inner evaluate logic — wrapped by OTel span in evaluate()."""
+        from sna.observability.tracing import add_span_attributes
+
         tool_name = request.tool_name
         device_count = len(request.device_targets)
 
@@ -345,6 +357,12 @@ class PolicyEngine:
             escalation_id = None
 
         from uuid import UUID
+        from sna.observability.tracing import add_span_attributes
+
+        add_span_attributes({
+            "risk_tier": risk_tier.value,
+            "verdict": verdict.value,
+        })
 
         return EvaluationResult(
             verdict=verdict,

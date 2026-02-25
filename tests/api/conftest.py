@@ -20,8 +20,8 @@ from sna.db.models import Base
 from sna.policy.engine import PolicyEngine
 from sna.policy.loader import load_policy
 
-TEST_API_KEY = "test-api-key-12345"
-TEST_ADMIN_KEY = "test-admin-key-67890"
+TEST_API_KEY = "test-api-key-12345-abcdefghijklmnop"
+TEST_ADMIN_KEY = "test-admin-key-67890-abcdefghijklm"
 SAMPLE_POLICY = "policies/default.yaml"
 
 

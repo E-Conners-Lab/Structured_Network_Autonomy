@@ -30,6 +30,9 @@ class DiscordNotifier(Notifier):
     """
 
     def __init__(self, webhook_url: str, timeout: float = 10.0) -> None:
+        from sna.utils.url_safety import validate_webhook_url
+
+        validate_webhook_url(webhook_url)
         self._webhook_url = webhook_url
         self._timeout = timeout
 

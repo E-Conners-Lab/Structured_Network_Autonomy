@@ -54,24 +54,30 @@ async def batch_execute(
             detail="Batch executor not available",
         )
 
-    # Evaluate policy for each unique tool
+    # Evaluate policy for EVERY unique tool in the batch
     tool_names = {item.tool_name for item in body.items}
     device_targets = [item.device_target for item in body.items]
 
-    # Evaluate policy for the batch (using highest-risk tool)
-    eval_request = EvaluationRequest(
-        tool_name=sorted(tool_names)[0],  # Use first tool for evaluation
-        parameters={},
-        device_targets=device_targets,
-        confidence_score=body.confidence_score,
-        context=dict(body.context),
-    )
+    eval_result = None
+    for tool_name in sorted(tool_names):
+        eval_request = EvaluationRequest(
+            tool_name=tool_name,
+            parameters={},
+            device_targets=device_targets,
+            confidence_score=body.confidence_score,
+            context=dict(body.context),
+        )
+        eval_result = await policy_engine.evaluate(eval_request)
+        if eval_result.verdict != Verdict.PERMIT:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Batch {eval_result.verdict.value} (tool={tool_name}): {eval_result.reason}",
+            )
 
-    eval_result = await policy_engine.evaluate(eval_request)
-    if eval_result.verdict != Verdict.PERMIT:
+    if eval_result is None:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Batch {eval_result.verdict.value}: {eval_result.reason}",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Batch must contain at least one item",
         )
 
     # Build batch items

@@ -47,9 +47,21 @@ async def _try_agent_auth(
     if session_factory is None:
         return False
 
+    prefix = token[:8] if len(token) >= 8 else token
+
     async with session_factory() as session:
-        result = await session.execute(select(Agent))
-        agents = result.scalars().all()
+        # Fast path: look up by prefix index (O(1) instead of O(n) bcrypt)
+        result = await session.execute(
+            select(Agent).where(Agent.api_key_prefix == prefix)
+        )
+        agents = list(result.scalars().all())
+
+        # Fallback: agents created before prefix migration have empty prefix
+        if not agents:
+            result = await session.execute(
+                select(Agent).where(Agent.api_key_prefix == "")
+            )
+            agents = list(result.scalars().all())
 
     for agent in agents:
         if agent.api_key_hash == "REVOKED":

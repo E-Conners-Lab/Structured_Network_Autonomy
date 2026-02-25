@@ -68,7 +68,7 @@ class RollbackExecutor:
             )
 
         device = log_entry.device_target
-        pool = self._connections.get_pool(device, platform)
+        pool = await self._connections.get_pool(device, platform)
 
         try:
             # Push the stored config back to the device

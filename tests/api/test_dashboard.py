@@ -36,8 +36,8 @@ class TestDashboardServing:
     async def test_dashboard_index(self, dashboard_dir: Path) -> None:
         """GET /dashboard/ serves index.html."""
         settings = Settings(
-            sna_api_key="test",
-            sna_admin_api_key="test",
+            sna_api_key="a" * 32,
+            sna_admin_api_key="b" * 32,
             dashboard_enabled=True,
             dashboard_static_path=str(dashboard_dir),
         )
@@ -49,8 +49,8 @@ class TestDashboardServing:
     async def test_dashboard_spa_fallback(self, dashboard_dir: Path) -> None:
         """SPA routes (no extension) serve index.html."""
         settings = Settings(
-            sna_api_key="test",
-            sna_admin_api_key="test",
+            sna_api_key="a" * 32,
+            sna_admin_api_key="b" * 32,
             dashboard_enabled=True,
             dashboard_static_path=str(dashboard_dir),
         )
@@ -62,8 +62,8 @@ class TestDashboardServing:
     async def test_dashboard_path_traversal_blocked(self, dashboard_dir: Path) -> None:
         """Path traversal attempts are blocked."""
         settings = Settings(
-            sna_api_key="test",
-            sna_admin_api_key="test",
+            sna_api_key="a" * 32,
+            sna_admin_api_key="b" * 32,
             dashboard_enabled=True,
             dashboard_static_path=str(dashboard_dir),
         )
@@ -74,8 +74,8 @@ class TestDashboardServing:
     async def test_csp_headers_on_dashboard(self, dashboard_dir: Path) -> None:
         """Dashboard responses include CSP headers."""
         settings = Settings(
-            sna_api_key="test",
-            sna_admin_api_key="test",
+            sna_api_key="a" * 32,
+            sna_admin_api_key="b" * 32,
             dashboard_enabled=True,
             dashboard_static_path=str(dashboard_dir),
         )
@@ -88,8 +88,8 @@ class TestDashboardServing:
     async def test_dashboard_disabled(self) -> None:
         """When dashboard_enabled=False, /dashboard returns 404."""
         settings = Settings(
-            sna_api_key="test",
-            sna_admin_api_key="test",
+            sna_api_key="a" * 32,
+            sna_admin_api_key="b" * 32,
             dashboard_enabled=False,
         )
         async with _make_client(settings) as client:
@@ -99,8 +99,8 @@ class TestDashboardServing:
     async def test_dashboard_missing_dir(self) -> None:
         """When dashboard dir doesn't exist, no crash at startup."""
         settings = Settings(
-            sna_api_key="test",
-            sna_admin_api_key="test",
+            sna_api_key="a" * 32,
+            sna_admin_api_key="b" * 32,
             dashboard_enabled=True,
             dashboard_static_path="/nonexistent/path",
         )
@@ -110,8 +110,8 @@ class TestDashboardServing:
     async def test_dashboard_nonexistent_file(self, dashboard_dir: Path) -> None:
         """Requesting a nonexistent file returns 404."""
         settings = Settings(
-            sna_api_key="test",
-            sna_admin_api_key="test",
+            sna_api_key="a" * 32,
+            sna_admin_api_key="b" * 32,
             dashboard_enabled=True,
             dashboard_static_path=str(dashboard_dir),
         )

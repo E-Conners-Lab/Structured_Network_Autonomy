@@ -110,6 +110,7 @@ async def register_agent(
                 name=body.name,
                 description=body.description,
                 api_key_hash=key_hash,
+                api_key_prefix=api_key[:8],
             )
             session.add(agent)
             await session.flush()

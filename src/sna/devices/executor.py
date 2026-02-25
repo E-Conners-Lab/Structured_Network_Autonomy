@@ -100,6 +100,27 @@ class DeviceExecutor:
             CommandValidationError: If parameters fail validation.
             DeviceConnectionError: If device connection fails.
         """
+        from sna.observability.tracing import span as otel_span, add_span_attributes
+
+        with otel_span("sna.device.execute", attributes={
+            "tool_name": tool_name,
+            "device_target": device_target,
+        }):
+            return await self._execute_inner(
+                tool_name, device_target, params, evaluation_result, platform,
+            )
+
+    async def _execute_inner(
+        self,
+        tool_name: str,
+        device_target: str,
+        params: dict[str, str],
+        evaluation_result: EvaluationResult,
+        platform: Platform = Platform.IOS_XE,
+    ) -> ExecutionResult:
+        """Inner execute logic — wrapped by OTel span in execute()."""
+        from sna.observability.tracing import add_span_attributes
+
         if evaluation_result.verdict != Verdict.PERMIT:
             raise ValueError(
                 f"Cannot execute with verdict {evaluation_result.verdict.value}"
@@ -125,7 +146,7 @@ class DeviceExecutor:
             )
 
         timeout = self._builder.get_timeout(tool_name)
-        pool = self._connections.get_pool(device_target, platform)
+        pool = await self._connections.get_pool(device_target, platform)
 
         # Capture pre-change config for write tools
         rollback_data: str | None = None
@@ -251,6 +272,11 @@ class DeviceExecutor:
             rollback_data=rollback_data,
             validation_results=tuple(validation_results),
         )
+
+        add_span_attributes({
+            "success": str(result.success),
+            "duration_seconds": result.elapsed_seconds,
+        })
 
         await logger.ainfo(
             "device_execution_complete",

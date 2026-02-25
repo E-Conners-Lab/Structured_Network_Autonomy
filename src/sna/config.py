@@ -85,6 +85,25 @@ class Settings(BaseSettings):
     max_batch_size: int = 10
     rate_limit_batch: int = 5
 
+    # Slack integration
+    slack_webhook_url: AnyHttpUrl | None = None
+
+    # PagerDuty integration
+    pagerduty_routing_key: str | None = None
+    pagerduty_api_url: str = "https://events.pagerduty.com/v2/enqueue"
+
+    # OpenTelemetry
+    otel_enabled: bool = False
+    otel_endpoint: str | None = None
+    otel_service_name: str = "sna"
+
+    # Vault integration
+    vault_addr: str | None = None
+    vault_token: str | None = None
+    vault_mount_path: str = "secret"
+    vault_tls_verify: bool = True
+    vault_cache_ttl: int = 300
+
     # Logging
     log_level: str = "INFO"
     log_format: str = "json"
@@ -101,6 +120,8 @@ class Settings(BaseSettings):
     def api_keys_not_empty(cls, v: str) -> str:
         if not v or not v.strip():
             raise ValueError("API keys must not be empty — set SNA_API_KEY and SNA_ADMIN_API_KEY")
+        if len(v.strip()) < 32:
+            raise ValueError("API keys must be at least 32 characters")
         return v
 
     @field_validator("default_eas")

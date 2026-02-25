@@ -77,6 +77,9 @@ async def create_mcp_server(settings: Settings | None = None) -> FastMCP:
     notifier = create_notifier(
         discord_webhook_url=str(settings.discord_webhook_url) if settings.discord_webhook_url else None,
         teams_webhook_url=str(settings.teams_webhook_url) if settings.teams_webhook_url else None,
+        slack_webhook_url=str(settings.slack_webhook_url) if settings.slack_webhook_url else None,
+        pagerduty_routing_key=settings.pagerduty_routing_key,
+        pagerduty_api_url=settings.pagerduty_api_url,
         httpx_timeout=settings.httpx_timeout_seconds,
     )
 
