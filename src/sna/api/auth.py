@@ -114,8 +114,10 @@ async def require_api_key(
 
     settings = request.app.state.settings
 
-    # Fast path: global API key
+    # Fast path: global API key or admin key
     if secrets.compare_digest(credentials.credentials, settings.sna_api_key):
+        return credentials.credentials
+    if secrets.compare_digest(credentials.credentials, settings.sna_admin_api_key):
         return credentials.credentials
 
     # Slow path: per-agent key
@@ -179,8 +181,10 @@ async def optional_api_key(
 
     settings = request.app.state.settings
 
-    # Try global key first
+    # Try global key first (either standard or admin)
     if secrets.compare_digest(credentials.credentials, settings.sna_api_key):
+        return credentials.credentials
+    if secrets.compare_digest(credentials.credentials, settings.sna_admin_api_key):
         return credentials.credentials
 
     # Try agent key

@@ -7,6 +7,7 @@ export default function EscalationPanel() {
   const [reason, setReason] = useState('');
   const [decidedBy, setDecidedBy] = useState('');
   const [confirming, setConfirming] = useState(null); // 'APPROVED' | 'REJECTED' | null
+  const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     const res = await apiFetch('/escalation/pending');
@@ -21,6 +22,7 @@ export default function EscalationPanel() {
 
   async function submitDecision(decision) {
     if (!selected || !decidedBy.trim() || !reason.trim()) return;
+    setError('');
     const res = await apiFetch(`/escalation/${selected.external_id}/decision`, {
       method: 'POST',
       body: { decision, decided_by: decidedBy.trim(), reason: reason.trim() },
@@ -31,6 +33,11 @@ export default function EscalationPanel() {
       setDecidedBy('');
       setConfirming(null);
       load();
+    } else if (res.status === 403) {
+      setError('Admin API key required. Log out and log in with the admin key.');
+    } else {
+      const msg = res.data?.detail || `Request failed (${res.status})`;
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
     }
   }
 
@@ -107,6 +114,10 @@ export default function EscalationPanel() {
                 style={{ width: '100%', marginTop: 8, padding: '4px 8px' }}
               />
             </div>
+
+            {error && (
+              <p style={{ color: '#ff4444', marginTop: 8, fontSize: '0.9rem' }}>{error}</p>
+            )}
 
             <div className="actions" style={{ marginTop: 12 }}>
               <button

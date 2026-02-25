@@ -16,6 +16,7 @@ export default defineConfig({
       '/health': 'http://localhost:8000',
     },
   },
+  base: '/dashboard/',
   build: {
     outDir: 'dist',
   },
