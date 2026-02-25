@@ -1,0 +1,58 @@
+# SNA Docker Compose — API + Postgres + reverse proxy
+# Secrets mounted at runtime — never in ENV or image
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sna
+      POSTGRES_USER: sna
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sna"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  sna-api:
+    build: .
+    read_only: true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sna:${DB_PASSWORD}@postgres:5432/sna
+      POLICY_FILE_PATH: ./policies/default.yaml
+      LOG_LEVEL: INFO
+      LOG_FORMAT: json
+      API_HOST: "0.0.0.0"
+      API_PORT: "8000"
+    secrets:
+      - api_key
+      - admin_key
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  pgdata:
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  api_key:
+    file: ./secrets/api_key.txt
+  admin_key:
+    file: ./secrets/admin_key.txt

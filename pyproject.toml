@@ -17,6 +17,12 @@ dependencies = [
     "structlog>=24.4.0",
     "slowapi>=0.1.9",
     "aiofiles>=24.1.0",
+    "fastmcp>=2.0.0",
+    "scrapli[asyncssh]>=2024.7.30",
+    "asyncpg>=0.30.0",
+    "typer>=0.15.0",
+    "bcrypt>=4.2.0",
+    "prometheus-client>=0.21.0",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +34,9 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
 ]
+
+[project.scripts]
+sna = "sna.cli:app"
 
 [build-system]
 requires = ["setuptools>=75.0.0"]

@@ -207,7 +207,7 @@ class TestAppLifespan:
         assert pending_resp.status_code == 200
         assert pending_resp.json()["total"] >= 1
 
-        # Decide
+        # Decide (requires admin key)
         decision_resp = await lifecycle_client.post(
             f"/escalation/{esc_id}/decision",
             json={
@@ -215,7 +215,7 @@ class TestAppLifespan:
                 "decided_by": "lifecycle-admin",
                 "reason": "Lifecycle test",
             },
-            headers={"Authorization": f"Bearer {TEST_API_KEY}"},
+            headers={"Authorization": f"Bearer {TEST_ADMIN_KEY}"},
         )
         assert decision_resp.status_code == 200
         assert decision_resp.json()["status"] == "APPROVED"

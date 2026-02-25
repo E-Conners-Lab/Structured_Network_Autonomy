@@ -40,8 +40,12 @@ class Settings(BaseSettings):
     sna_api_key: str
     sna_admin_api_key: str
 
+    # Dashboard
+    dashboard_enabled: bool = True
+    dashboard_static_path: str = "./dashboard/dist"
+
     # CORS
-    cors_allowed_origins: str = "http://localhost:3000"
+    cors_allowed_origins: str = "http://localhost:3000,http://localhost:5173"
 
     # HTTP client
     httpx_timeout_seconds: float = 10.0
@@ -53,6 +57,20 @@ class Settings(BaseSettings):
     rate_limit_evaluate: int = 100
     rate_limit_escalation_decision: int = 20
     rate_limit_policy_reload: int = 5
+
+    # Agent defaults
+    default_agent_eas: float = 0.1
+
+    # MCP Server
+    mcp_server_host: str = "127.0.0.1"
+    mcp_server_port: int = 8001
+    mcp_transport: str = "stdio"
+
+    # NetBox integration
+    netbox_url: str | None = None
+    netbox_token: str | None = None
+    netbox_sync_interval: int = 300  # seconds
+    netbox_cache_ttl: float = 300.0  # seconds
 
     # Logging
     log_level: str = "INFO"

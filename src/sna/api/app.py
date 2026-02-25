@@ -11,19 +11,22 @@ Creates the FastAPI app with:
 
 from __future__ import annotations
 
+import pathlib
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
-from starlette.responses import JSONResponse
+from starlette.responses import FileResponse, JSONResponse
 
 from sna.api.error_handlers import register_error_handlers
-from sna.api.routes import audit, escalation, evaluate, health, policy
+from sna.api.routes import agents, audit, eas, escalation, evaluate, executions, health, inventory, metrics, policy, reports
+from sna.observability.correlation import CorrelationMiddleware
 from sna.config import Settings
 from sna.db.models import Base
 from sna.db.session import create_async_engine_from_url, create_session_factory
@@ -127,6 +130,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["Authorization", "Content-Type"],
     )
 
+    # --- Correlation IDs ---
+    app.add_middleware(CorrelationMiddleware)
+
     # --- Rate limiting ---
     limiter = _create_limiter()
     app.state.limiter = limiter
@@ -155,11 +161,51 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # --- Routes ---
     app.include_router(evaluate.router)
     app.include_router(escalation.router)
+    app.include_router(agents.router)
     app.include_router(audit.router)
+    app.include_router(executions.router)
+    app.include_router(eas.router)
+    app.include_router(reports.router)
+    app.include_router(inventory.router)
+    app.include_router(metrics.router)
     app.include_router(policy.router)
     app.include_router(health.router)
 
     # --- Error handlers ---
     register_error_handlers(app)
+
+    # --- CSP headers ---
+    @app.middleware("http")
+    async def add_security_headers(request: Request, call_next: object) -> Response:
+        response = await call_next(request)  # type: ignore[operator]
+        if request.url.path.startswith("/dashboard") or request.url.path == "/":
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+            )
+        return response
+
+    # --- Dashboard static files ---
+    if settings.dashboard_enabled:
+        dashboard_path = pathlib.Path(settings.dashboard_static_path).resolve()
+        if dashboard_path.is_dir():
+            @app.get("/dashboard/{rest_of_path:path}")
+            async def serve_dashboard(rest_of_path: str) -> Response:
+                """Serve dashboard static files with path traversal protection."""
+                # Serve index.html for SPA routes (no extension)
+                if not rest_of_path or "." not in rest_of_path.split("/")[-1]:
+                    index = dashboard_path / "index.html"
+                    if index.is_file():
+                        return FileResponse(str(index))
+                    return JSONResponse({"detail": "Dashboard not built"}, status_code=404)
+
+                # Resolve and validate path
+                file_path = (dashboard_path / rest_of_path).resolve()
+                if not str(file_path).startswith(str(dashboard_path)):
+                    return JSONResponse({"detail": "Invalid path"}, status_code=400)
+                if file_path.is_file():
+                    return FileResponse(str(file_path))
+                return JSONResponse({"detail": "Not found"}, status_code=404)
+
+            app.mount("/dashboard/assets", StaticFiles(directory=str(dashboard_path / "assets")), name="dashboard-assets") if (dashboard_path / "assets").is_dir() else None
 
     return app

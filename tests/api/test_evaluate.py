@@ -72,7 +72,7 @@ class TestEvaluateEndpoint:
         self, client: AsyncClient, auth_headers: dict
     ) -> None:
         """Exceeding device scope limit should trigger ESCALATE."""
-        targets = [f"switch-{i:02d}" for i in range(60)]
+        targets = [f"switch-{i:02d}" for i in range(5)]
         response = await client.post(
             "/evaluate",
             json={

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from sna.api.auth import require_api_key
+from sna.api.auth import require_admin_key, require_api_key
 from sna.api.dependencies import get_session_factory
 from sna.api.schemas import (
     EscalationDecisionRequest,
@@ -31,10 +31,10 @@ async def decide_escalation(
     request: Request,
     escalation_id: UUID,
     body: EscalationDecisionRequest,
-    _api_key: str = Depends(require_api_key),
+    _admin_key: str = Depends(require_admin_key),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> EscalationDecisionResponse:
-    """Approve or reject a pending escalation."""
+    """Approve or reject a pending escalation. Requires admin API key."""
     async with session_factory() as session:
         async with session.begin():
             result = await session.execute(

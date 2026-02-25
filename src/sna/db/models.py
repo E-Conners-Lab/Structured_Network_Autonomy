@@ -1,4 +1,4 @@
-"""ORM models — AuditLog, EscalationRecord, EASHistory.
+"""ORM models — Agent, AuditLog, EscalationRecord, EASHistory, ExecutionLog.
 
 All API-facing identifiers use UUID4 to prevent enumeration.
 AuditLog is append-only — no update or delete operations.
@@ -11,13 +11,20 @@ import enum
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text
-from sqlalchemy.dialects.sqlite import JSON
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
     """Base class for all ORM models."""
+
+
+class AgentStatus(str, enum.Enum):
+    """Status of a registered AI agent."""
+
+    ACTIVE = "ACTIVE"
+    SUSPENDED = "SUSPENDED"
+    REVOKED = "REVOKED"
 
 
 class EscalationStatus(str, enum.Enum):
@@ -26,6 +33,41 @@ class EscalationStatus(str, enum.Enum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
+
+
+class Agent(Base):
+    """Registered AI agent with per-agent API key and EAS.
+
+    API key is stored as bcrypt hash — never plaintext.
+    """
+
+    __tablename__ = "agent"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    external_id: Mapped[str] = mapped_column(
+        String(36), unique=True, nullable=False, default=lambda: str(uuid4())
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    api_key_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    eas: Mapped[float] = mapped_column(Float, nullable=False, default=0.1)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=AgentStatus.ACTIVE.value
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    last_seen: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        Index("ix_agent_name", "name"),
+        Index("ix_agent_status", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Agent(id={self.id}, name={self.name}, status={self.status})>"
 
 
 class AuditLog(Base):
@@ -64,6 +106,11 @@ class AuditLog(Base):
 
     # EAS at time of decision
     eas_at_time: Mapped[float] = mapped_column(Float, nullable=False)
+
+    # Agent identity (nullable — existing rows have no agent, global-key requests have no agent)
+    agent_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("agent.id"), nullable=True
+    )
 
     # Relationship to escalation (optional — only exists for ESCALATE verdicts)
     escalation: Mapped[EscalationRecord | None] = relationship(
@@ -172,4 +219,53 @@ class EASHistory(Base):
         return (
             f"<EASHistory(id={self.id}, score={self.eas_score}, "
             f"prev={self.previous_score})>"
+        )
+
+
+class ExecutionLog(Base):
+    """Record of actual device command execution after PERMIT verdict.
+
+    Captures the command sent, sanitized output, duration, success/failure,
+    and rollback data for write operations.
+    """
+
+    __tablename__ = "execution_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    external_id: Mapped[str] = mapped_column(
+        String(36), unique=True, nullable=False, default=lambda: str(uuid4())
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    # Execution details
+    tool_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    device_target: Mapped[str] = mapped_column(String(255), nullable=False)
+    command_sent: Mapped[str] = mapped_column(Text, nullable=False)
+    output: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    duration_seconds: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+    # Rollback data (pre-change config for write tools)
+    rollback_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Error details (if execution failed)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Optional FK to audit_log (nullable to prevent constraint issues)
+    audit_log_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("audit_log.id"), nullable=True
+    )
+
+    __table_args__ = (
+        Index("ix_execution_log_timestamp", "timestamp"),
+        Index("ix_execution_log_tool_name", "tool_name"),
+        Index("ix_execution_log_device_target", "device_target"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ExecutionLog(id={self.id}, tool={self.tool_name}, "
+            f"device={self.device_target}, success={self.success})>"
         )

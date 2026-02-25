@@ -30,7 +30,7 @@ class TestEscalationDecision:
         return data["escalation_id"]
 
     async def test_approve_escalation(
-        self, client: AsyncClient, auth_headers: dict
+        self, client: AsyncClient, auth_headers: dict, admin_headers: dict
     ) -> None:
         """Approving a pending escalation should succeed."""
         esc_id = await self._create_escalation(client, auth_headers)
@@ -42,7 +42,7 @@ class TestEscalationDecision:
                 "decided_by": "senior-admin",
                 "reason": "Looks safe",
             },
-            headers=auth_headers,
+            headers=admin_headers,
         )
         assert response.status_code == 200
         data = response.json()
@@ -51,7 +51,7 @@ class TestEscalationDecision:
         assert data["external_id"] == esc_id
 
     async def test_reject_escalation(
-        self, client: AsyncClient, auth_headers: dict
+        self, client: AsyncClient, auth_headers: dict, admin_headers: dict
     ) -> None:
         """Rejecting a pending escalation should succeed."""
         esc_id = await self._create_escalation(client, auth_headers)
@@ -63,14 +63,14 @@ class TestEscalationDecision:
                 "decided_by": "senior-admin",
                 "reason": "Too risky",
             },
-            headers=auth_headers,
+            headers=admin_headers,
         )
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "REJECTED"
 
     async def test_double_decision_conflict(
-        self, client: AsyncClient, auth_headers: dict
+        self, client: AsyncClient, auth_headers: dict, admin_headers: dict
     ) -> None:
         """Deciding on an already-resolved escalation should return 409."""
         esc_id = await self._create_escalation(client, auth_headers)
@@ -83,7 +83,7 @@ class TestEscalationDecision:
                 "decided_by": "senior-admin",
                 "reason": "Approved first time",
             },
-            headers=auth_headers,
+            headers=admin_headers,
         )
 
         # Second decision
@@ -94,12 +94,12 @@ class TestEscalationDecision:
                 "decided_by": "another-admin",
                 "reason": "Too late",
             },
-            headers=auth_headers,
+            headers=admin_headers,
         )
         assert response.status_code == 409
 
     async def test_decision_not_found(
-        self, client: AsyncClient, auth_headers: dict
+        self, client: AsyncClient, admin_headers: dict
     ) -> None:
         """Decision on non-existent escalation should return 404."""
         response = await client.post(
@@ -109,12 +109,12 @@ class TestEscalationDecision:
                 "decided_by": "admin",
                 "reason": "test",
             },
-            headers=auth_headers,
+            headers=admin_headers,
         )
         assert response.status_code == 404
 
     async def test_decision_invalid_status(
-        self, client: AsyncClient, auth_headers: dict
+        self, client: AsyncClient, auth_headers: dict, admin_headers: dict
     ) -> None:
         """Invalid decision value should fail validation."""
         esc_id = await self._create_escalation(client, auth_headers)
@@ -126,7 +126,7 @@ class TestEscalationDecision:
                 "decided_by": "admin",
                 "reason": "test",
             },
-            headers=auth_headers,
+            headers=admin_headers,
         )
         assert response.status_code == 422
 

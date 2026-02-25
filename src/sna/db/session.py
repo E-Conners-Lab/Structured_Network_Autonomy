@@ -38,10 +38,16 @@ def create_async_engine_from_url(
     """
     kwargs: dict[str, object] = {"echo": echo}
 
-    if "sqlite" in database_url:
+    # Dialect-based pool configuration (not string matching)
+    from sqlalchemy import make_url
+
+    url = make_url(database_url)
+    if url.get_backend_name() == "sqlite":
         kwargs["connect_args"] = {"timeout": connect_timeout}
     else:
         kwargs["pool_timeout"] = pool_timeout
+        kwargs["pool_size"] = 10
+        kwargs["max_overflow"] = 20
 
     return create_async_engine(database_url, **kwargs)
 

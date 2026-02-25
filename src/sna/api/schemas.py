@@ -57,11 +57,11 @@ class EvaluateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    tool_name: str = Field(min_length=1)
-    parameters: dict[str, object] = Field(default_factory=dict)
-    device_targets: list[str] = Field(default_factory=list)
+    tool_name: str = Field(min_length=1, max_length=255)
+    parameters: dict[str, object] = Field(default_factory=dict, max_length=50)
+    device_targets: list[str] = Field(default_factory=list, max_length=20)
     confidence_score: float = Field(ge=0.0, le=1.0)
-    context: dict[str, object] = Field(default_factory=dict)
+    context: dict[str, object] = Field(default_factory=dict, max_length=50)
 
 
 class EvaluateResponse(BaseModel):
@@ -88,8 +88,8 @@ class EscalationDecisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     decision: str = Field(pattern="^(APPROVED|REJECTED)$")
-    decided_by: str = Field(min_length=1)
-    reason: str = Field(min_length=1)
+    decided_by: str = Field(min_length=1, max_length=255)
+    reason: str = Field(min_length=1, max_length=2000)
 
 
 class EscalationResponse(BaseModel):
@@ -138,6 +138,23 @@ class AuditEntryResponse(BaseModel):
     requires_audit: bool
     requires_senior_approval: bool
     eas_at_time: float
+
+
+# --- Execution audit endpoint ---
+
+
+class ExecutionLogResponse(BaseModel):
+    """Single execution log entry in API responses."""
+
+    external_id: str
+    timestamp: datetime
+    tool_name: str
+    device_target: str
+    command_sent: str
+    output: str
+    success: bool
+    duration_seconds: float
+    error: str | None = None
 
 
 # --- Policy endpoint ---

@@ -109,6 +109,52 @@ class HardRules(BaseModel):
         return cleaned
 
 
+class SiteRule(BaseModel):
+    """Context-aware policy rule based on device site."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    site: str
+    verdict: Verdict
+    applies_to: str = "write"  # "write", "all", or specific tool name
+    reason: str = ""
+
+
+class RoleRule(BaseModel):
+    """Context-aware policy rule based on device role."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: str
+    verdict: Verdict
+    applies_to: str = "write"  # "write", "all", or specific tool name
+    reason: str = ""
+
+
+class TagRule(BaseModel):
+    """Context-aware policy rule based on device tags."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tag: str
+    verdict: Verdict
+    applies_to: str = "write"
+    reason: str = ""
+
+
+class MaintenanceWindowConfig(BaseModel):
+    """Maintenance window definition in policy YAML."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    sites: list[str] = Field(default_factory=list)
+    devices: list[str] = Field(default_factory=list)
+    start: str | None = None  # ISO format datetime string
+    end: str | None = None
+    relax_thresholds: bool = True
+
+
 class PolicyConfig(BaseModel):
     """Top-level policy configuration — validated against the YAML file.
 
@@ -124,6 +170,12 @@ class PolicyConfig(BaseModel):
     scope_limits: ScopeLimits
     default_tier_for_unknown: RiskTier = RiskTier.TIER_3_MEDIUM_RISK_WRITE
     hard_rules: HardRules
+
+    # Phase 6 — optional context-aware rules (defaults allow old YAML to load)
+    site_rules: list[SiteRule] = Field(default_factory=list)
+    role_rules: list[RoleRule] = Field(default_factory=list)
+    tag_rules: list[TagRule] = Field(default_factory=list)
+    maintenance_windows: list[MaintenanceWindowConfig] = Field(default_factory=list)
 
     @field_validator("action_tiers")
     @classmethod

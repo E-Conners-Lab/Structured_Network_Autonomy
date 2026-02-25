@@ -1,0 +1,234 @@
+/* SNA Dashboard — CSS Variables for full customization
+   Matches NetworkOps teal/cyan theme, card-based layout.
+   Change --accent to restyle the entire dashboard. */
+
+:root {
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --text: #1f2937;
+  --accent: #0f766e;
+  --accent-light: #14b8a6;
+  --muted: #64748b;
+  --border: #d1d5db;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --font: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --radius: 8px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.app {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--accent);
+}
+
+.header h1 {
+  color: var(--accent);
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.login-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.login-form input {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+}
+
+.login-form button,
+.btn {
+  padding: 6px 16px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.btn:hover { opacity: 0.9; }
+.btn-danger { background: var(--danger); }
+.btn-warning { background: var(--warning); }
+.btn-success { background: var(--success); }
+.btn-sm { padding: 4px 10px; font-size: 0.75rem; }
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  padding: 8px 20px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 0.875rem;
+  border-bottom: 2px solid transparent;
+}
+
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.card {
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+}
+
+.card h3 {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.card .value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.card .value.permit { color: var(--success); }
+.card .value.escalate { color: var(--warning); }
+.card .value.block { color: var(--danger); }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+th {
+  text-align: left;
+  padding: 10px 12px;
+  background: var(--bg);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-permit { background: #dcfce7; color: var(--success); }
+.badge-escalate { background: #fef3c7; color: var(--warning); }
+.badge-block { background: #fee2e2; color: var(--danger); }
+.badge-pending { background: #fef3c7; color: var(--warning); }
+.badge-approved { background: #dcfce7; color: var(--success); }
+.badge-rejected { background: #fee2e2; color: var(--danger); }
+.badge-active { background: #dcfce7; color: var(--success); }
+.badge-suspended { background: #fef3c7; color: var(--warning); }
+.badge-revoked { background: #fee2e2; color: var(--danger); }
+
+.eas-gauge {
+  text-align: center;
+  padding: 24px;
+}
+
+.eas-gauge .score {
+  font-size: 3rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.eas-gauge .label {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.empty {
+  text-align: center;
+  padding: 40px;
+  color: var(--muted);
+}
+
+pre {
+  background: var(--bg);
+  padding: 12px;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  font-size: 0.8rem;
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+}
+
+.confirm-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--panel);
+  padding: 24px;
+  border-radius: var(--radius);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+  z-index: 100;
+}
+
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 99;
+}
