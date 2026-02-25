@@ -1,1 +1,1 @@
-"""External service integrations — Discord, MCP."""
+"""External service integrations — Discord, Teams, MCP."""
