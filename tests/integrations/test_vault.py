@@ -140,13 +140,17 @@ class TestVaultClient:
 
     async def test_vault_not_configured_fallback(self) -> None:
         """When vault_addr is not set, env vars should be used directly."""
-        # This is tested via ConnectionManager, not VaultClient directly
+        from unittest.mock import patch
         from sna.devices.driver import ConnectionManager
 
-        mgr = ConnectionManager(vault_client=None)
-        pool = await mgr.get_pool("switch-01", platform=__import__("sna.devices.registry", fromlist=["Platform"]).Platform.IOS_XE)
-        # Pool should still be created (using env vars)
-        assert pool is not None
+        with patch.dict("os.environ", {
+            "SNA_DEVICE_SWITCH_01_USERNAME": "admin",
+            "SNA_DEVICE_SWITCH_01_PASSWORD": "admin",
+        }):
+            mgr = ConnectionManager(vault_client=None)
+            pool = await mgr.get_pool("switch-01", platform=__import__("sna.devices.registry", fromlist=["Platform"]).Platform.IOS_XE)
+            # Pool should still be created (using env vars)
+            assert pool is not None
 
     async def test_path_traversal_rejected(
         self, vault_client: VaultClient

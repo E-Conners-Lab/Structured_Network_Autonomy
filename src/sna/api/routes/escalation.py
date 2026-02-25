@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from sna.api.auth import require_admin_key, require_api_key
 from sna.api.dependencies import get_session_factory
+from sna.api.rate_limit import limiter
 from sna.api.schemas import (
     EscalationDecisionRequest,
     EscalationDecisionResponse,
@@ -27,6 +28,7 @@ router = APIRouter()
     "/escalation/{escalation_id}/decision",
     response_model=EscalationDecisionResponse,
 )
+@limiter.limit("20/minute")
 async def decide_escalation(
     request: Request,
     escalation_id: UUID,

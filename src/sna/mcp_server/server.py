@@ -17,6 +17,7 @@ from sna.db.session import create_async_engine_from_url, create_session_factory
 from sna.devices.command_builder import CommandValidationError, create_default_command_builder
 from sna.devices.driver import ConnectionManager, DeviceConnectionError
 from sna.devices.executor import DeviceExecutor
+from sna.devices.inventory import DeviceInventory, load_inventory
 from sna.integrations.mcp import MCPGateway, MCPToolCall
 from sna.validation.rules import ValidationEngine
 from sna.integrations.netbox import NetBoxClient
@@ -86,10 +87,15 @@ async def create_mcp_server(settings: Settings | None = None) -> FastMCP:
     # Initialize validation engine
     validation_engine = ValidationEngine(pyats_enabled=settings.pyats_enabled)
 
+    # Load device inventory (optional)
+    device_inventory: DeviceInventory | None = None
+    if settings.inventory_file_path:
+        device_inventory = await load_inventory(settings.inventory_file_path)
+
     # Initialize device layer
     gateway = MCPGateway(engine=policy_engine, notifier=notifier)
     command_builder = create_default_command_builder()
-    connection_manager = ConnectionManager()
+    connection_manager = ConnectionManager(inventory=device_inventory)
     executor = DeviceExecutor(
         command_builder=command_builder,
         connection_manager=connection_manager,
@@ -143,14 +149,19 @@ def _register_tool(
         device = kwargs.pop("device", "unknown")
         actual_tool_name = tool_handler.__name__  # Closure captures tool_name
 
-        # Build the MCP tool call
+        # Pop MCP-specific fields before building tool call parameters
+        confidence_score = kwargs.pop("confidence_score", 0.5)
+        context = kwargs.pop("context", {})
+        caller_id = kwargs.pop("caller_id", "mcp-agent")
+
+        # Build the MCP tool call with clean parameters
         tool_call = MCPToolCall(
             tool_name=actual_tool_name,
-            parameters=kwargs,
+            parameters=dict(kwargs),
             device_targets=[device],
-            confidence_score=kwargs.pop("confidence_score", 0.5),
-            context=kwargs.pop("context", {}),
-            caller_id=kwargs.pop("caller_id", "mcp-agent"),
+            confidence_score=confidence_score,
+            context=context,
+            caller_id=caller_id,
         )
 
         # Evaluate through policy gateway

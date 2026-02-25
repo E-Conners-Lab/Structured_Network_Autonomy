@@ -201,7 +201,7 @@ class TestAgentListing:
     async def test_get_agent_detail(
         self, client: AsyncClient, admin_headers: dict, auth_headers: dict
     ) -> None:
-        """Any authenticated user can get agent details."""
+        """Admin can get agent details."""
         reg = await client.post(
             "/agents",
             json={"name": "detail-agent"},
@@ -210,17 +210,17 @@ class TestAgentListing:
         agent_id = reg.json()["external_id"]
 
         response = await client.get(
-            f"/agents/{agent_id}", headers=auth_headers
+            f"/agents/{agent_id}", headers=admin_headers
         )
         assert response.status_code == 200
         assert response.json()["name"] == "detail-agent"
 
     async def test_get_agent_not_found(
-        self, client: AsyncClient, auth_headers: dict
+        self, client: AsyncClient, admin_headers: dict
     ) -> None:
         response = await client.get(
             "/agents/00000000-0000-0000-0000-000000000000",
-            headers=auth_headers,
+            headers=admin_headers,
         )
         assert response.status_code == 404
 
@@ -235,7 +235,7 @@ class TestAgentListing:
         agent_id = reg.json()["external_id"]
 
         response = await client.get(
-            f"/agents/{agent_id}/activity", headers=auth_headers
+            f"/agents/{agent_id}/activity", headers=admin_headers
         )
         assert response.status_code == 200
         assert response.json()["name"] == "activity-agent"

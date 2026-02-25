@@ -11,7 +11,9 @@ from datetime import datetime
 from typing import Generic, TypeVar
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+import re
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from sna.policy.models import RiskTier, Verdict
 
@@ -57,11 +59,23 @@ class EvaluateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    tool_name: str = Field(min_length=1, max_length=255)
+    tool_name: str = Field(min_length=1, max_length=255, pattern=r"^[a-zA-Z0-9_-]+$")
     parameters: dict[str, object] = Field(default_factory=dict, max_length=50)
     device_targets: list[str] = Field(default_factory=list, max_length=20)
     confidence_score: float = Field(ge=0.0, le=1.0)
     context: dict[str, object] = Field(default_factory=dict, max_length=50)
+
+    @field_validator("device_targets")
+    @classmethod
+    def validate_device_targets(cls, v: list[str]) -> list[str]:
+        """Each device target must contain only safe characters."""
+        pattern = re.compile(r"^[a-zA-Z0-9._-]{1,255}$")
+        for target in v:
+            if not pattern.match(target):
+                raise ValueError(
+                    f"Invalid device target '{target}': must match [a-zA-Z0-9._-]{{1,255}}"
+                )
+        return v
 
 
 class EvaluateResponse(BaseModel):
@@ -237,6 +251,18 @@ class BatchItemRequest(BaseModel):
     device_target: str = Field(min_length=1, max_length=255)
     tool_name: str = Field(min_length=1, max_length=255)
     params: dict[str, str] = Field(default_factory=dict, max_length=50)
+
+    @field_validator("params")
+    @classmethod
+    def validate_params_values(cls, v: dict[str, str]) -> dict[str, str]:
+        """Each param value must not exceed 255 characters."""
+        for key, value in v.items():
+            if len(value) > 255:
+                raise ValueError(
+                    f"Param '{key}' value exceeds 255 character limit ({len(value)} chars)"
+                )
+        return v
+
     platform: str = Field(default="cisco_iosxe", max_length=50)
     depends_on: list[str] = Field(default_factory=list, max_length=20)
     priority: int = Field(default=0, ge=0, le=100)

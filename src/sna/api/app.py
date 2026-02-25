@@ -19,12 +19,11 @@ import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from starlette.responses import FileResponse, JSONResponse
 
 from sna.api.error_handlers import register_error_handlers
+from sna.api.rate_limit import limiter
 from sna.api.routes import agents, audit, batch, eas, escalation, evaluate, executions, health, inventory, metrics, policy, reports
 from sna.observability.correlation import CorrelationMiddleware
 from sna.config import Settings
@@ -34,6 +33,7 @@ from sna.devices.batch import BatchExecutor
 from sna.devices.command_builder import create_default_command_builder
 from sna.devices.driver import ConnectionManager
 from sna.devices.executor import DeviceExecutor
+from sna.devices.inventory import DeviceInventory, load_inventory
 from sna.devices.rollback import RollbackExecutor
 from sna.integrations.netbox import NetBoxClient
 from sna.log_config import configure_logging
@@ -41,11 +41,6 @@ from sna.policy.engine import PolicyEngine
 from sna.validation.rules import ValidationEngine
 
 logger = structlog.get_logger()
-
-
-def _create_limiter() -> Limiter:
-    """Create a slowapi rate limiter keyed by remote address."""
-    return Limiter(key_func=get_remote_address)
 
 
 @asynccontextmanager
@@ -116,9 +111,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             timeout=settings.httpx_timeout_seconds,
         )
 
-    # 8. Device execution infrastructure
+    # 8. Device inventory (optional)
+    device_inventory: DeviceInventory | None = None
+    if settings.inventory_file_path:
+        device_inventory = await load_inventory(settings.inventory_file_path)
+
+    # 9. Device execution infrastructure
     command_builder = create_default_command_builder()
-    connection_manager = ConnectionManager(vault_client=vault_client)
+    connection_manager = ConnectionManager(vault_client=vault_client, inventory=device_inventory)
     device_executor = DeviceExecutor(
         command_builder=command_builder,
         connection_manager=connection_manager,
@@ -211,7 +211,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(CorrelationMiddleware)
 
     # --- Rate limiting ---
-    limiter = _create_limiter()
     app.state.limiter = limiter
 
     @app.exception_handler(RateLimitExceeded)
@@ -227,11 +226,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.middleware("http")
     async def limit_request_body(request: Request, call_next: object) -> Response:
         content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > max_body:
-            return JSONResponse(
-                status_code=413,
-                content={"detail": "Request body too large"},
-            )
+        if content_length:
+            try:
+                if int(content_length) > max_body:
+                    return JSONResponse(
+                        status_code=413,
+                        content={"detail": "Request body too large"},
+                    )
+            except ValueError:
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "Invalid Content-Length header"},
+                )
         response = await call_next(request)  # type: ignore[operator]
         return response
 
@@ -252,14 +258,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # --- Error handlers ---
     register_error_handlers(app)
 
-    # --- CSP headers ---
+    # --- Security headers ---
     @app.middleware("http")
     async def add_security_headers(request: Request, call_next: object) -> Response:
         response = await call_next(request)  # type: ignore[operator]
+
+        # Unconditional security headers
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+
+        # CSP: dashboard gets 'self' policy, API routes get restrictive policy
         if request.url.path.startswith("/dashboard") or request.url.path == "/":
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
             )
+        else:
+            response.headers["Content-Security-Policy"] = "default-src 'none'"
+
         return response
 
     # --- Dashboard static files ---

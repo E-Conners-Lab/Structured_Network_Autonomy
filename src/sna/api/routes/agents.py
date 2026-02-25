@@ -170,7 +170,7 @@ async def list_agents(
 async def get_agent(
     request: Request,
     agent_id: UUID,
-    _api_key: str = Depends(require_api_key),
+    _api_key: str = Depends(require_admin_key),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> AgentResponse:
     """Get agent details by ID."""
@@ -246,7 +246,7 @@ async def revoke_agent(
 async def get_agent_activity(
     request: Request,
     agent_id: UUID,
-    _api_key: str = Depends(require_api_key),
+    _api_key: str = Depends(require_admin_key),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> AgentActivityResponse:
     """Get agent activity summary."""
@@ -336,7 +336,7 @@ async def create_override(
 async def list_overrides(
     request: Request,
     agent_id: UUID,
-    _api_key: str = Depends(require_api_key),
+    _api_key: str = Depends(require_admin_key),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> list[OverrideResponse]:
     """List policy overrides for an agent."""
@@ -373,7 +373,7 @@ async def list_overrides(
 async def get_agent_reputation(
     request: Request,
     agent_id: UUID,
-    _api_key: str = Depends(require_api_key),
+    _api_key: str = Depends(require_admin_key),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> ReputationResponse:
     """Get agent reputation score breakdown."""

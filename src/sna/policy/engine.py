@@ -310,6 +310,7 @@ class PolicyEngine:
                         requires_audit=requires_audit,
                         requires_senior_approval=requires_senior_approval,
                         eas_at_time=self._eas,
+                        agent_id=request.agent_id,
                     )
                     session.add(audit_entry)
                     await session.flush()

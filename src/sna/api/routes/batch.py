@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from sna.api.auth import require_admin_key
+from sna.api.rate_limit import limiter
 from sna.api.schemas import (
     BatchExecuteRequest,
     BatchExecuteResponse,
@@ -27,6 +28,7 @@ router = APIRouter(prefix="/batch", tags=["batch"])
     status_code=status.HTTP_200_OK,
     dependencies=[Depends(require_admin_key)],
 )
+@limiter.limit("5/minute")
 async def batch_execute(
     request: Request,
     body: BatchExecuteRequest,

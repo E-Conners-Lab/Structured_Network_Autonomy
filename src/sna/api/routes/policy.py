@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from sna.api.auth import require_admin_key, require_api_key
 from sna.api.dependencies import get_engine, get_session_factory, get_settings
+from sna.api.rate_limit import limiter
 from sna.api.schemas import (
     PaginatedResponse,
     PaginationParams,
@@ -35,6 +36,7 @@ router = APIRouter()
 
 
 @router.post("/policy/reload", response_model=PolicyReloadResponse)
+@limiter.limit("5/minute")
 async def reload_policy(
     request: Request,
     _admin_key: str = Depends(require_admin_key),

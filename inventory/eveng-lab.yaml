@@ -1,0 +1,42 @@
+# EVE-NG Lab Device Inventory
+# Lab server: 192.168.68.201
+#
+# Maps device names to management IPs and platform types.
+# Used by SNA to resolve hostname -> IP when executing on real devices.
+
+devices:
+  R1:
+    host: "10.255.255.11"
+    platform: cisco_iosxe
+
+  R2:
+    host: "10.255.255.12"
+    platform: cisco_iosxe
+
+  R3:
+    host: "10.255.255.13"
+    platform: cisco_iosxe
+
+  R4:
+    host: "10.255.255.14"
+    platform: cisco_iosxe
+
+  R6:
+    host: "10.255.255.36"
+    platform: cisco_iosxe
+
+  R7:
+    host: "10.255.255.34"
+    platform: cisco_iosxe
+
+  Switch-R1:
+    host: "10.255.255.21"
+    platform: cisco_iosxe
+
+  Switch-R2:
+    host: "10.255.255.22"
+    platform: cisco_iosxe
+
+  Switch-R4:
+    host: "10.255.255.24"
+    platform: cisco_iosxe

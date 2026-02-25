@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Request
 
 from sna.api.auth import require_api_key
 from sna.api.dependencies import get_engine
+from sna.api.rate_limit import limiter
 from sna.api.schemas import EvaluateRequest, EvaluateResponse
 from sna.policy.engine import PolicyEngine
 from sna.policy.models import EvaluationRequest
@@ -14,6 +15,7 @@ router = APIRouter()
 
 
 @router.post("/evaluate", response_model=EvaluateResponse)
+@limiter.limit("100/minute")
 async def evaluate_action(
     request: Request,
     body: EvaluateRequest,

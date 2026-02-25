@@ -56,18 +56,32 @@ class TestDevicePool:
 class TestConnectionManager:
     """Connection manager pool management tests."""
 
+    @patch.dict("os.environ", {
+        "SNA_DEVICE_SWITCH_01_USERNAME": "admin",
+        "SNA_DEVICE_SWITCH_01_PASSWORD": "admin",
+    })
     async def test_get_pool_creates_new(self) -> None:
         mgr = ConnectionManager()
         pool = await mgr.get_pool("switch-01", Platform.IOS_XE)
         assert pool is not None
         assert pool.config.host == "switch-01"
 
+    @patch.dict("os.environ", {
+        "SNA_DEVICE_SWITCH_01_USERNAME": "admin",
+        "SNA_DEVICE_SWITCH_01_PASSWORD": "admin",
+    })
     async def test_get_pool_returns_cached(self) -> None:
         mgr = ConnectionManager()
         pool1 = await mgr.get_pool("switch-01", Platform.IOS_XE)
         pool2 = await mgr.get_pool("switch-01", Platform.IOS_XE)
         assert pool1 is pool2
 
+    @patch.dict("os.environ", {
+        "SNA_DEVICE_SWITCH_01_USERNAME": "admin",
+        "SNA_DEVICE_SWITCH_01_PASSWORD": "admin",
+        "SNA_DEVICE_SWITCH_02_USERNAME": "admin",
+        "SNA_DEVICE_SWITCH_02_PASSWORD": "admin",
+    })
     async def test_different_devices_different_pools(self) -> None:
         mgr = ConnectionManager()
         pool1 = await mgr.get_pool("switch-01", Platform.IOS_XE)
@@ -84,6 +98,12 @@ class TestConnectionManager:
         assert pool.config.auth_username == "testuser"
         assert pool.config.auth_password == "testpass"
 
+    @patch.dict("os.environ", {
+        "SNA_DEVICE_SWITCH_01_USERNAME": "admin",
+        "SNA_DEVICE_SWITCH_01_PASSWORD": "admin",
+        "SNA_DEVICE_SWITCH_02_USERNAME": "admin",
+        "SNA_DEVICE_SWITCH_02_PASSWORD": "admin",
+    })
     async def test_close_all(self) -> None:
         mgr = ConnectionManager()
         await mgr.get_pool("switch-01", Platform.IOS_XE)
@@ -120,12 +140,11 @@ class TestSanitizeError:
 
 
 class TestEmptyCredentialsWarning:
-    """Test warning when device credentials are missing."""
+    """Test that missing device credentials raises DeviceConnectionError."""
 
-    async def test_empty_credentials_warning(self) -> None:
-        """Verify warning logged when env vars are missing."""
+    async def test_missing_credentials_raises(self) -> None:
+        """Verify DeviceConnectionError raised when env vars are missing."""
         mgr = ConnectionManager()
         with patch.dict("os.environ", {}, clear=False):
-            pool = await mgr.get_pool("no-creds-device", Platform.IOS_XE)
-            assert pool.config.auth_username == ""
-            assert pool.config.auth_password == ""
+            with pytest.raises(DeviceConnectionError, match="Missing credentials"):
+                await mgr.get_pool("no-creds-device", Platform.IOS_XE)

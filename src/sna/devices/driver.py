@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 
 import structlog
 
+from sna.devices.inventory import DeviceInventory
 from sna.devices.registry import DriverConfig, Platform
 
 logger = structlog.get_logger()
@@ -185,10 +186,12 @@ class ConnectionManager:
         self,
         max_concurrent_per_device: int = 3,
         vault_client: object | None = None,
+        inventory: DeviceInventory | None = None,
     ) -> None:
         self._pools: dict[str, DevicePool] = {}
         self._max_concurrent = max_concurrent_per_device
         self._vault_client = vault_client
+        self._inventory = inventory
 
     async def get_pool(self, device_name: str, platform: Platform) -> DevicePool:
         """Get or create a connection pool for a device.
@@ -205,6 +208,17 @@ class ConnectionManager:
         """
         if device_name in self._pools:
             return self._pools[device_name]
+
+        # Resolve host from inventory if available
+        host = device_name
+        if self._inventory is not None:
+            resolved_host = self._inventory.resolve_host(device_name)
+            if resolved_host is not None:
+                host = resolved_host
+                # Also resolve platform from inventory if not explicitly provided
+                inv_platform = self._inventory.resolve_platform(device_name)
+                if inv_platform is not None:
+                    platform = inv_platform
 
         env_name = device_name.upper().replace("-", "_").replace(".", "_")
         username: str | None = None
@@ -234,10 +248,15 @@ class ConnectionManager:
                 device=device_name,
                 env_username_var=f"SNA_DEVICE_{env_name}_USERNAME",
             )
+            raise DeviceConnectionError(
+                f"Missing credentials for device '{device_name}'. "
+                f"Set SNA_DEVICE_{env_name}_USERNAME and SNA_DEVICE_{env_name}_PASSWORD "
+                f"environment variables, or configure Vault."
+            )
 
         config = DriverConfig(
             platform=platform,
-            host=device_name,
+            host=host,
             auth_username=username,
             auth_password=password,
         )

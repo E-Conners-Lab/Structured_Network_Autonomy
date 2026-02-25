@@ -131,10 +131,32 @@ class Settings(BaseSettings):
             raise ValueError("DEFAULT_EAS must be between 0.0 and 1.0")
         return v
 
+    # Device inventory
+    inventory_file_path: str | None = None
+
     @property
     def cors_origins_list(self) -> list[str]:
-        """Parse comma-separated CORS origins into a list."""
-        return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+        """Parse comma-separated CORS origins into a list.
+
+        Rejects wildcard '*' when allow_credentials=True (browser security).
+        Warns on non-HTTPS origins (except localhost).
+        """
+        import logging
+
+        origins = [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+        validated: list[str] = []
+        for origin in origins:
+            if origin == "*":
+                logging.getLogger(__name__).warning(
+                    "CORS origin '*' is not allowed with allow_credentials=True — skipping"
+                )
+                continue
+            if not origin.startswith("https://") and "localhost" not in origin and "127.0.0.1" not in origin:
+                logging.getLogger(__name__).warning(
+                    "CORS origin '%s' is not HTTPS — consider using HTTPS in production", origin
+                )
+            validated.append(origin)
+        return validated
 
 
 def get_settings() -> Settings:
