@@ -72,7 +72,7 @@ export default function AuditExplorer() {
                   <td colSpan={6}>
                     <div style={{ padding: 8 }}>
                       <p><strong>Reason:</strong> {String(e.reason)}</p>
-                      <p><strong>Devices:</strong> {e.device_count}</p>
+                      <p><strong>Devices:</strong> {(e.device_targets || []).length > 0 ? e.device_targets.join(', ') : e.device_count}</p>
                       <p><strong>Requires Audit:</strong> {e.requires_audit ? 'Yes' : 'No'}</p>
                       <p><strong>Senior Approval:</strong> {e.requires_senior_approval ? 'Yes' : 'No'}</p>
                     </div>

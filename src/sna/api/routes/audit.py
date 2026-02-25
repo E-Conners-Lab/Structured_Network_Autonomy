@@ -49,6 +49,7 @@ async def list_audit_log(
             risk_tier=r.risk_tier,
             confidence_score=r.confidence_score,
             confidence_threshold=r.confidence_threshold,
+            device_targets=r.device_targets or [],
             device_count=r.device_count,
             reason=r.reason,
             requires_audit=r.requires_audit,

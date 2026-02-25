@@ -52,7 +52,7 @@ export default function VerdictFeed() {
               </td>
               <td>{String(e.risk_tier)}</td>
               <td>{(e.confidence_score * 100).toFixed(0)}%</td>
-              <td>{e.device_count}</td>
+              <td>{(e.device_targets || []).length > 0 ? e.device_targets.join(', ') : e.device_count}</td>
             </tr>
           ))}
         </tbody>

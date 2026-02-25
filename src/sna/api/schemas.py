@@ -134,6 +134,7 @@ class AuditEntryResponse(BaseModel):
     risk_tier: str
     confidence_score: float
     confidence_threshold: float
+    device_targets: list[str] = Field(default_factory=list)
     device_count: int
     reason: str
     requires_audit: bool
