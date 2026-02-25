@@ -1,0 +1,175 @@
+"""ORM models — AuditLog, EscalationRecord, EASHistory.
+
+All API-facing identifiers use UUID4 to prevent enumeration.
+AuditLog is append-only — no update or delete operations.
+All timestamps are UTC.
+"""
+
+from __future__ import annotations
+
+import enum
+from datetime import UTC, datetime
+from uuid import uuid4
+
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.dialects.sqlite import JSON
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    """Base class for all ORM models."""
+
+
+class EscalationStatus(str, enum.Enum):
+    """Status of an escalation record."""
+
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
+class AuditLog(Base):
+    """Immutable record of every policy engine decision.
+
+    Append-only — no update or delete operations are ever performed on this table.
+    Every PERMIT, ESCALATE, and BLOCK decision is recorded with full context.
+    """
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    external_id: Mapped[str] = mapped_column(
+        String(36), unique=True, nullable=False, default=lambda: str(uuid4())
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    # Action details
+    tool_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    parameters: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    device_targets: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    device_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Decision details
+    verdict: Mapped[str] = mapped_column(String(20), nullable=False)
+    risk_tier: Mapped[str] = mapped_column(String(50), nullable=False)
+    confidence_score: Mapped[float] = mapped_column(Float, nullable=False)
+    confidence_threshold: Mapped[float] = mapped_column(Float, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Flags
+    requires_audit: Mapped[bool] = mapped_column(nullable=False, default=False)
+    requires_senior_approval: Mapped[bool] = mapped_column(nullable=False, default=False)
+
+    # EAS at time of decision
+    eas_at_time: Mapped[float] = mapped_column(Float, nullable=False)
+
+    # Relationship to escalation (optional — only exists for ESCALATE verdicts)
+    escalation: Mapped[EscalationRecord | None] = relationship(
+        "EscalationRecord", back_populates="audit_log", uselist=False
+    )
+
+    __table_args__ = (
+        Index("ix_audit_log_timestamp", "timestamp"),
+        Index("ix_audit_log_verdict", "verdict"),
+        Index("ix_audit_log_tool_name", "tool_name"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<AuditLog(id={self.id}, tool={self.tool_name}, "
+            f"verdict={self.verdict}, tier={self.risk_tier})>"
+        )
+
+
+class EscalationRecord(Base):
+    """Tracks actions that require human approval.
+
+    Created when the Policy Engine returns an ESCALATE verdict.
+    Updated when an operator approves or rejects the action.
+    """
+
+    __tablename__ = "escalation_record"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    external_id: Mapped[str] = mapped_column(
+        String(36), unique=True, nullable=False, default=lambda: str(uuid4())
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    # Action context
+    tool_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    parameters: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    risk_tier: Mapped[str] = mapped_column(String(50), nullable=False)
+    confidence_score: Mapped[float] = mapped_column(Float, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    device_targets: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    device_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Decision
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=EscalationStatus.PENDING.value
+    )
+    decided_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Flags
+    requires_senior_approval: Mapped[bool] = mapped_column(nullable=False, default=False)
+
+    # Foreign key to audit log
+    audit_log_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("audit_log.id"), nullable=False
+    )
+    audit_log: Mapped[AuditLog] = relationship(
+        "AuditLog", back_populates="escalation"
+    )
+
+    __table_args__ = (
+        Index("ix_escalation_status", "status"),
+        Index("ix_escalation_created_at", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<EscalationRecord(id={self.id}, tool={self.tool_name}, "
+            f"status={self.status})>"
+        )
+
+
+class EASHistory(Base):
+    """Historical record of Earned Autonomy Score changes.
+
+    Tracks every EAS modification with the previous score, new score,
+    and the reason for the change.
+    """
+
+    __tablename__ = "eas_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    external_id: Mapped[str] = mapped_column(
+        String(36), unique=True, nullable=False, default=lambda: str(uuid4())
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    eas_score: Mapped[float] = mapped_column(Float, nullable=False)
+    previous_score: Mapped[float] = mapped_column(Float, nullable=False)
+    change_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    __table_args__ = (
+        Index("ix_eas_history_timestamp", "timestamp"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<EASHistory(id={self.id}, score={self.eas_score}, "
+            f"prev={self.previous_score})>"
+        )

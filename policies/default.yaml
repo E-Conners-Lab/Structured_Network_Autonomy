@@ -1,0 +1,75 @@
+# SNA Policy Engine — Default Policy Configuration
+# This file defines action tiers, confidence thresholds, scope limits, and hard rules.
+# Validated by Pydantic on load. Invalid policy fails loudly.
+# Changes to this file are logged with before/after diff.
+
+version: "1.0"
+
+action_tiers:
+  tier_1_read:
+    description: "Show commands, telemetry, health checks"
+    default_verdict: "PERMIT"
+    examples:
+      - "show_running_config"
+      - "show_interfaces"
+      - "show_bgp_summary"
+      - "ping"
+      - "traceroute"
+
+  tier_2_low_risk_write:
+    description: "Descriptions, logging config"
+    default_verdict: "PERMIT"
+    requires_audit: true
+    examples:
+      - "set_interface_description"
+      - "configure_logging"
+
+  tier_3_medium_risk_write:
+    description: "Routing, VLANs, ACLs"
+    default_verdict: "ESCALATE"
+    examples:
+      - "configure_static_route"
+      - "configure_vlan"
+      - "configure_acl"
+
+  tier_4_high_risk_write:
+    description: "Changes to 3+ devices simultaneously, BGP, security policy"
+    default_verdict: "ESCALATE"
+    requires_senior_approval: true
+    examples:
+      - "configure_bgp_neighbor"
+      - "configure_ospf_area"
+      - "modify_security_policy"
+
+  tier_5_critical:
+    description: "Irreversible actions, core infrastructure, maintenance window violations"
+    default_verdict: "BLOCK"
+    examples:
+      - "write_erase"
+      - "reload_device"
+      - "factory_reset"
+
+confidence_thresholds:
+  tier_1_read: 0.1
+  tier_2_low_risk_write: 0.3
+  tier_3_medium_risk_write: 0.6
+  tier_4_high_risk_write: 0.8
+  tier_5_critical: 1.0
+
+eas_modulation:
+  enabled: true
+  max_threshold_reduction: 0.1
+  min_eas_for_modulation: 0.3
+
+scope_limits:
+  max_devices_per_action: 3
+  escalate_above: 3
+
+default_tier_for_unknown: "tier_3_medium_risk_write"
+
+hard_rules:
+  always_block:
+    - "write_erase"
+    - "factory_reset"
+    - "delete_startup_config"
+  description: "These actions are always BLOCK regardless of confidence, EAS, or scope. Cannot be unlocked at runtime."
