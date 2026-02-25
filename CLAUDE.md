@@ -82,7 +82,7 @@ Phase 1: Policy Engine
 - [x] Component 1: Project scaffolding
 - [x] Component 2: Policy YAML schema & Pydantic models + tests
 - [x] Component 3: Database models + tests
-- [ ] Component 4: Core PolicyEngine class + tests
+- [x] Component 4: Core PolicyEngine class + tests
 - [ ] Component 5: FastAPI application & routes + tests
 - [ ] Component 6: Notification integrations (Discord + Teams) + tests
 - [ ] Component 7: MCP integration wrapper + tests
