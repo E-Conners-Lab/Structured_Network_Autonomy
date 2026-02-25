@@ -85,5 +85,5 @@ Phase 1: Policy Engine
 - [x] Component 4: Core PolicyEngine class + tests
 - [x] Component 5: FastAPI application & routes + tests
 - [x] Component 6: Notification integrations (Discord + Teams) + tests
-- [ ] Component 7: MCP integration wrapper + tests
+- [x] Component 7: MCP integration wrapper + tests
 - [ ] Component 8: Integration test suite + coverage verification
