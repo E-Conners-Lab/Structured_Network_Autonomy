@@ -122,6 +122,7 @@ class DevicePool:
                 "auth_username": self._config.auth_username,
                 "auth_password": self._config.auth_password,
                 "auth_strict_key": self._config.auth_strict_key,
+                "ssh_known_hosts_file": self._config.ssh_known_hosts_file,
                 "timeout_socket": self._config.timeout_socket,
                 "timeout_transport": self._config.timeout_transport,
                 "timeout_ops": timeout_ops,

@@ -31,6 +31,7 @@ class DriverConfig:
     auth_username: str = ""
     auth_password: str = ""
     auth_strict_key: bool = True
+    ssh_known_hosts_file: str = "~/.ssh/known_hosts"
     timeout_socket: int = 10  # Hardcoded per CLAUDE.md — not configurable
     timeout_transport: int = 10  # Hardcoded per CLAUDE.md — not configurable
     timeout_ops: int = 30
