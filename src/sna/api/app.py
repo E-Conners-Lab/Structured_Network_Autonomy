@@ -24,7 +24,7 @@ from starlette.responses import FileResponse, JSONResponse
 
 from sna.api.error_handlers import register_error_handlers
 from sna.api.rate_limit import limiter
-from sna.api.routes import agents, audit, batch, eas, escalation, evaluate, executions, health, inventory, metrics, policy, reports
+from sna.api.routes import agents, audit, batch, devices, eas, escalation, evaluate, executions, health, inventory, metrics, policy, reports, timeline
 from sna.observability.correlation import CorrelationMiddleware
 from sna.config import Settings
 from sna.db.models import Base
@@ -155,6 +155,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.device_executor = device_executor
     app.state.batch_executor = batch_executor
     app.state.connection_manager = connection_manager
+    app.state.device_inventory = device_inventory
 
     await logger.ainfo(
         "startup_complete",
@@ -250,10 +251,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(eas.router)
     app.include_router(reports.router)
     app.include_router(inventory.router)
+    app.include_router(devices.router)
     app.include_router(metrics.router)
     app.include_router(policy.router)
     app.include_router(batch.router)
     app.include_router(health.router)
+    app.include_router(timeline.router)
 
     # --- Error handlers ---
     register_error_handlers(app)

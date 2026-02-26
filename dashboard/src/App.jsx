@@ -7,9 +7,13 @@ import AuditExplorer from './components/AuditExplorer';
 import AgentManager from './components/AgentManager';
 import EASMonitor from './components/EASMonitor';
 import PolicyViewer from './components/PolicyViewer';
+import DeviceGrid from './components/DeviceGrid';
+import TimelinePanel from './components/TimelinePanel';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'timeline', label: 'Timeline' },
+  { id: 'devices', label: 'Devices' },
   { id: 'escalations', label: 'Escalations' },
   { id: 'audit', label: 'Audit Log' },
   { id: 'agents', label: 'Agents' },
@@ -82,6 +86,8 @@ export default function App() {
               </div>
             </div>
           )}
+          {activeTab === 'timeline' && <TimelinePanel />}
+          {activeTab === 'devices' && <DeviceGrid />}
           {activeTab === 'escalations' && <EscalationPanel />}
           {activeTab === 'audit' && <AuditExplorer />}
           {activeTab === 'agents' && <AgentManager />}

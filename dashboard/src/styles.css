@@ -232,3 +232,64 @@ pre {
   background: rgba(0,0,0,0.3);
   z-index: 99;
 }
+
+/* --- Timeline --- */
+
+.timeline-filters {
+  margin: 12px 0 16px;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: var(--radius);
+}
+
+.timeline {
+  position: relative;
+  padding-left: 24px;
+}
+
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+
+.timeline-event {
+  position: relative;
+  margin-bottom: 16px;
+  padding-left: 16px;
+}
+
+.timeline-event-dot {
+  position: absolute;
+  left: -20px;
+  top: 6px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--panel);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.timeline-event-content {
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+}
+
+.timeline-event:hover .timeline-event-content {
+  border-color: var(--accent-light);
+}
+
+@media (max-width: 768px) {
+  .timeline-filters > div {
+    flex-direction: column;
+  }
+  .timeline-filters input {
+    width: 100% !important;
+  }
+}

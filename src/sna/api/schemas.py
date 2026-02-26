@@ -135,6 +135,23 @@ class EscalationDecisionResponse(BaseModel):
     decided_at: datetime
 
 
+class EscalationDeviceResult(BaseModel):
+    """Per-device execution result within an escalation execute response."""
+
+    device: str
+    success: bool
+    output: str = ""
+    error: str | None = None
+
+
+class EscalationExecuteResponse(BaseModel):
+    """POST /escalation/{id}/execute response body."""
+
+    escalation_id: UUID
+    tool_name: str
+    results: list[EscalationDeviceResult]
+
+
 # --- Audit endpoint ---
 
 
@@ -310,3 +327,22 @@ class BatchStatusResponse(BaseModel):
     total: int
     succeeded: int
     failed: int
+
+
+# --- Timeline endpoint ---
+
+
+class TimelineEventResponse(BaseModel):
+    """Single event in the unified activity timeline."""
+
+    id: str
+    timestamp: datetime
+    event_type: str
+    summary: str
+    tool_name: str | None = None
+    verdict: str | None = None
+    risk_tier: str | None = None
+    success: bool | None = None
+    device: str | None = None
+    devices: list[str] = Field(default_factory=list)
+    details: dict | None = None

@@ -1,10 +1,11 @@
-"""POST /escalation/{id}/decision and GET /escalation/pending."""
+"""POST /escalation/{id}/decision, GET /escalation/pending, POST /escalation/{id}/execute."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -15,11 +16,16 @@ from sna.api.rate_limit import limiter
 from sna.api.schemas import (
     EscalationDecisionRequest,
     EscalationDecisionResponse,
+    EscalationDeviceResult,
+    EscalationExecuteResponse,
     EscalationResponse,
     PaginatedResponse,
     PaginationParams,
 )
 from sna.db.models import EscalationRecord, EscalationStatus
+from sna.policy.models import EvaluationResult, RiskTier, Verdict
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -69,6 +75,103 @@ async def decide_escalation(
         status=body.decision,
         decided_by=body.decided_by,
         decided_at=now,
+    )
+
+
+@router.post(
+    "/escalation/{escalation_id}/execute",
+    response_model=EscalationExecuteResponse,
+)
+@limiter.limit("10/minute")
+async def execute_escalation(
+    request: Request,
+    escalation_id: UUID,
+    _admin_key: str = Depends(require_admin_key),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> EscalationExecuteResponse:
+    """Execute an approved escalation on its target devices. Requires admin API key."""
+    async with session_factory() as session:
+        result = await session.execute(
+            select(EscalationRecord).where(
+                EscalationRecord.external_id == str(escalation_id)
+            )
+        )
+        escalation = result.scalar_one_or_none()
+
+    if escalation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Escalation not found",
+        )
+
+    if escalation.status != EscalationStatus.APPROVED.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Escalation is {escalation.status}, must be APPROVED to execute",
+        )
+
+    device_targets = escalation.device_targets or []
+    if not device_targets:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Escalation has no device targets",
+        )
+
+    # Construct a PERMIT EvaluationResult from the stored escalation data
+    evaluation_result = EvaluationResult(
+        verdict=Verdict.PERMIT,
+        risk_tier=RiskTier(escalation.risk_tier),
+        tool_name=escalation.tool_name,
+        reason=f"Approved escalation {escalation_id}",
+        confidence_score=escalation.confidence_score,
+        confidence_threshold=0.0,
+        device_count=len(device_targets),
+    )
+
+    # Cast parameters to dict[str, str] as expected by DeviceExecutor
+    params: dict[str, str] = {
+        k: str(v) for k, v in (escalation.parameters or {}).items()
+    }
+
+    executor = request.app.state.device_executor
+    device_results: list[EscalationDeviceResult] = []
+
+    for device in device_targets:
+        try:
+            exec_result = await executor.execute(
+                tool_name=escalation.tool_name,
+                device_target=device,
+                params=params,
+                evaluation_result=evaluation_result,
+            )
+            device_results.append(
+                EscalationDeviceResult(
+                    device=device,
+                    success=exec_result.success,
+                    output=exec_result.output,
+                    error=exec_result.error,
+                )
+            )
+        except Exception as exc:
+            await logger.aerror(
+                "escalation_execute_device_failed",
+                escalation_id=str(escalation_id),
+                device=device,
+                error=str(exc),
+            )
+            device_results.append(
+                EscalationDeviceResult(
+                    device=device,
+                    success=False,
+                    output="",
+                    error=str(exc),
+                )
+            )
+
+    return EscalationExecuteResponse(
+        escalation_id=escalation_id,
+        tool_name=escalation.tool_name,
+        results=device_results,
     )
 
 

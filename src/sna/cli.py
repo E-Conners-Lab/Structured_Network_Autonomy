@@ -4,6 +4,7 @@ Commands:
     sna serve          — Start the FastAPI server
     sna mcp-serve      — Start the MCP server
     sna evaluate       — One-shot policy evaluation
+    sna simulate       — Run network event simulator
     sna migrate        — Run database migrations
 """
 
@@ -97,6 +98,32 @@ def evaluate(
         typer.echo(f"Devices:    {result.device_count}")
 
         await engine.dispose()
+
+    asyncio.run(_run())
+
+
+@app.command()
+def simulate(
+    rounds: int = typer.Option(10, help="Number of scenario rounds to run"),
+    interval: float = typer.Option(2.0, help="Seconds between rounds"),
+    continuous: bool = typer.Option(False, help="Run continuously until stopped"),
+    api_url: str = typer.Option("http://localhost:8001", help="SNA API base URL"),
+    api_key: str = typer.Option("", help="SNA API key (or set SNA_API_KEY env var)"),
+    inventory_path: str = typer.Option("", help="Inventory YAML path (or set INVENTORY_FILE_PATH env var)"),
+) -> None:
+    """Run the network event simulator — generates realistic agent scenarios from live device state."""
+
+    async def _run() -> None:
+        from sna.simulator.runner import run_simulator
+
+        await run_simulator(
+            rounds=rounds,
+            interval=interval,
+            continuous=continuous,
+            api_url=api_url,
+            api_key=api_key or None,
+            inventory_path=inventory_path or None,
+        )
 
     asyncio.run(_run())
 
