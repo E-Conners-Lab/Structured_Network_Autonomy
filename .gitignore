@@ -35,6 +35,16 @@ htmlcov/
 # Node
 node_modules/
 
+# Dashboard build output
+dashboard/dist/
+
+# Docker secrets
+secrets/
+
+# Claude Code
+CLAUDE.md
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db

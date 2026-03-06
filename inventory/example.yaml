@@ -1,0 +1,18 @@
+# Example Device Inventory
+# Copy this file and update with your lab device IPs.
+# Set INVENTORY_FILE_PATH in .env to point to your inventory file.
+
+devices:
+  R1:
+    host: "10.0.0.1"
+    platform: cisco_iosxe
+
+  R2:
+    host: "10.0.0.2"
+    platform: cisco_iosxe
+
+  Switch-1:
+    host: "10.0.0.11"
+    platform: cisco_iosxe
+
+  # Supported platforms: cisco_iosxe, cisco_nxos, arista_eos, juniper_junos

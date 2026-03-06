@@ -11,7 +11,7 @@ AI agents executing network automation need guardrails. Without governance, an a
 Every MCP tool call passes through the Policy Engine before execution. The engine classifies the action, evaluates confidence and trust scores, and returns a verdict:
 
 ```
-Agent → MCP Tool Call → Policy Engine → Verdict → Execute or Escalate
+Agent -> MCP Tool Call -> Policy Engine -> Verdict -> Execute or Escalate
 ```
 
 ### Action Taxonomy
@@ -36,7 +36,7 @@ When an action requires human approval:
 
 1. The engine generates an escalation record with full context
 2. The record is persisted with PENDING status
-3. Notifications fire to Discord and/or Microsoft Teams
+3. Notifications fire to Discord, Slack, Teams, and/or PagerDuty
 4. The agent receives confirmation that approval is pending
 5. An operator approves or rejects via API endpoint
 6. Every decision is written to an append-only audit log
@@ -45,26 +45,51 @@ When an action requires human approval:
 
 ```
 src/sna/
-├── policy/          Policy Engine — evaluation, taxonomy, YAML schema
-│   ├── engine.py    Core evaluate(), reload_policy(), get_eas()
-│   ├── models.py    Pydantic models for policy schema and evaluation
-│   ├── loader.py    YAML loading with hot reload and diff logging
-│   └── taxonomy.py  Tool classification, threshold computation
-├── db/              Async SQLAlchemy persistence
-│   ├── models.py    AuditLog, EscalationRecord, EASHistory
-│   └── session.py   Engine and session factory with timeouts
-├── api/             FastAPI application
-│   ├── routes/      One module per endpoint group
-│   ├── auth.py      API key authentication
-│   ├── schemas.py   Request/response validation
-│   └── app.py       Application factory with middleware
-├── integrations/    External services
-│   ├── discord.py   Webhook notifications (rich embeds)
-│   ├── teams.py     Webhook notifications (Adaptive Cards)
-│   ├── notifier.py  Abstract notifier interface
-│   └── mcp.py       MCP tool call interceptor
-├── config.py        Pydantic Settings — all config via env vars
-└── log_config.py    Structured JSON logging (structlog)
+  policy/          Policy Engine — evaluation, taxonomy, YAML schema, context rules, versioning
+    engine.py      Core evaluate(), reload_policy(), get_eas()
+    models.py      Pydantic models for policy schema and evaluation
+    loader.py      YAML loading with hot reload and diff logging
+    taxonomy.py    Tool classification, threshold computation
+    context_rules  Site/role/tag-based policy rules
+    confidence.py  Dynamic confidence adjustment
+    reputation.py  Agent reputation scoring
+  db/              Async SQLAlchemy persistence
+    models.py      AuditLog, EscalationRecord, EASHistory
+    session.py     Engine and session factory with timeouts
+    migrations/    Alembic migration scripts
+  api/             FastAPI application
+    routes/        One module per endpoint group
+    auth.py        API key authentication
+    schemas.py     Request/response validation
+    app.py         Application factory with middleware
+  devices/         Device execution layer
+    driver.py      AsyncScrapli wrapper with connection pooling
+    executor.py    Post-PERMIT execution with rollback
+    command_builder Command templates and parameter validation
+    sanitizer.py   Credential redaction, injection prevention
+    registry.py    Platform configs (IOS-XE, NX-OS, EOS, JUNOS)
+    inventory.py   YAML-based device inventory
+  integrations/    External services
+    discord.py     Webhook notifications (rich embeds)
+    teams.py       Webhook notifications (Adaptive Cards)
+    slack.py       Slack notifications
+    pagerduty.py   On-call routing
+    vault.py       HashiCorp Vault credential retrieval
+    netbox.py      Device inventory with TTL cache and circuit breaker
+    notifier.py    Abstract notifier interface
+    mcp.py         MCP tool call interceptor
+  mcp_server/      FastMCP server with read/write tool registration
+  observability/   Prometheus metrics, correlation ID middleware
+  validation/      Post-change validators (config diff, protocol state, compliance)
+  simulator/       Scenario runner and baseline testing
+  config.py        Pydantic Settings — all config via env vars
+  log_config.py    Structured JSON logging (structlog)
+  cli.py           Typer CLI (serve, mcp-serve, evaluate, migrate)
+
+dashboard/         React/Vite UI (verdicts, escalations, audit, EAS, agents, policy viewer)
+policies/          Runtime YAML policy files
+inventory/         Device inventory files
+dashboards/        Pre-built Grafana dashboard JSON
 ```
 
 ## API Endpoints
@@ -76,6 +101,18 @@ src/sna/
 | GET | `/escalation/pending` | API key | List all pending escalations |
 | GET | `/audit` | API key | Paginated audit log |
 | POST | `/policy/reload` | Admin key | Hot reload policy YAML |
+| GET | `/policy/versions` | API key | Policy version history |
+| POST | `/policy/rollback` | Admin key | Roll back to a previous policy version |
+| GET | `/agents` | API key | List registered agents |
+| POST | `/agents` | Admin key | Register a new agent |
+| GET | `/agents/{id}/overrides` | API key | Per-agent policy overrides |
+| GET | `/eas/{agent_id}` | API key | Current EAS score and history |
+| GET | `/devices` | API key | Device inventory |
+| GET | `/executions` | API key | Execution history |
+| POST | `/batch` | API key | Multi-device batch operations |
+| GET | `/metrics` | API key | Prometheus metrics |
+| GET | `/reports/summary` | API key | Verdict and execution summaries |
+| GET | `/timeline` | API key | Unified activity feed |
 | GET | `/health` | None/API key | Engine health (minimal unauthenticated, full with key) |
 
 ## Policy Configuration
@@ -146,8 +183,48 @@ python -m pytest tests/ -v
 ### Start the API
 
 ```bash
-uvicorn sna.api.app:app --host 127.0.0.1 --port 8000
+uvicorn sna.api.app:create_app --factory --host 127.0.0.1 --port 8000
 ```
+
+### Dashboard (optional)
+
+The dashboard is a React/Vite app that provides a UI for monitoring verdicts, escalations, audit logs, EAS scores, and policy configuration.
+
+```bash
+cd dashboard
+npm install
+npm run dev      # Development server on http://localhost:5173
+npm run build    # Production build to dashboard/dist/
+```
+
+The dashboard expects the API to be running on `http://localhost:8000`.
+
+### Docker Deployment
+
+```bash
+# 1. Create secrets directory
+mkdir -p secrets
+echo "your-db-password" > secrets/db_password.txt
+echo "your-api-key" > secrets/api_key.txt
+echo "your-admin-key" > secrets/admin_key.txt
+
+# 2. Start the stack
+docker compose up -d
+```
+
+This starts a Postgres database and the SNA API in a hardened container (non-root, read-only filesystem, all capabilities dropped).
+
+### Device Inventory
+
+Copy the example inventory and update with your device IPs:
+
+```bash
+cp inventory/example.yaml inventory/my-lab.yaml
+# Edit inventory/my-lab.yaml with your device management IPs
+# Set INVENTORY_FILE_PATH=./inventory/my-lab.yaml in .env
+```
+
+Device credentials are set via environment variables (see `.env.example`).
 
 ## Security Model
 
@@ -169,25 +246,70 @@ SNA is built for environments running:
 
 - **MCP server** (FastMCP/Python) for network automation tooling
 - **Cisco IOS-XE** routers (C8000V) and **Cat9kv** switches
-- **ContainerLab** for network topology
+- **ContainerLab** or **EVE-NG** for network topology
 - **Async Scrapli** for device connections
 - **NetBox** as source of truth
 - **pyATS** for validation testing
-- **Docker stack**: InfluxDB, Grafana, FreeRADIUS
+- **Docker stack**: Postgres, Grafana, InfluxDB, FreeRADIUS
 
 ## Build Status
 
-Phase 1: Policy Engine
-
-- [x] Project scaffolding and directory structure
+### Phase 1: Policy Engine -- Complete
 - [x] Policy YAML schema and Pydantic validation models
 - [x] Database models (AuditLog, EscalationRecord, EASHistory)
-- [ ] Core PolicyEngine class
-- [ ] FastAPI application and routes
-- [ ] Notification integrations (Discord + Teams)
-- [ ] MCP integration wrapper
-- [ ] Integration test suite
+- [x] Core PolicyEngine class
+- [x] FastAPI application and routes
+- [x] Notification integrations (Discord + Teams)
+- [x] MCP integration wrapper
+- [x] Integration test suite
+
+### Phase 2: Device Execution & Operational Readiness -- Complete
+- [x] Device driver layer (AsyncScrapli wrapper, connection pooling, timeout enforcement)
+- [x] Command builder and sanitizer (template registry, injection prevention, credential redaction)
+- [x] Device executor with rollback (pre-change capture, automatic rollback on failure)
+- [x] Device registry (IOS-XE, NX-OS, EOS, JUNOS platform configs)
+- [x] MCP server with tool registration (5 read tools, 6 write tools, policy intercept)
+- [x] Post-change validation framework
+- [x] EAS adjuster (automatic scoring, tier weights, anti-gaming)
+- [x] Maintenance windows (time-based escalation overrides)
+
+### Phase 3: Observability, Integrations & API Expansion -- Complete
+- [x] Prometheus metrics
+- [x] Correlation ID middleware
+- [x] NetBox integration (device inventory, TTL cache, circuit breaker)
+- [x] Extended API routes (agents, executions, inventory, metrics, reports, EAS, timeline)
+- [x] CLI interface (Typer: serve, mcp-serve, evaluate, migrate)
+- [x] Dashboard UI (React/Vite)
+- [x] Docker and deployment
+
+### Phase 4: Context-Aware Policy & Advanced Governance -- Complete
+- [x] Context-aware policy rules (site/role/tag evaluation, priority resolution)
+- [x] Policy versioning (immutable version history, SHA-256 hashing, rollback)
+- [x] Per-agent policy overrides
+- [x] Dynamic confidence adjustment (device criticality, agent history)
+- [x] Agent reputation scoring
+
+### Phase 5: Advanced Validation & Network Intelligence -- Planned
+- [ ] pyATS validation integration
+- [ ] BGP/OSPF session state validators
+- [ ] Config diff analysis (semantic diff, compliance drift)
+- [ ] Batch operations (multi-device with dependency ordering)
+- [ ] Device enrichment from NetBox
+
+### Phase 6: Enterprise Integrations & Observability -- Planned
+- [ ] OpenTelemetry integration
+- [ ] Slack notifications
+- [ ] PagerDuty on-call routing
+- [ ] Vault integration for device credentials
+- [ ] Grafana dashboards
+
+### Phase 7: Scale & Multi-Tenancy -- Planned
+- [ ] Multi-tenant support
+- [ ] Kubernetes operator
+- [ ] Horizontal scaling
+- [ ] Agent marketplace
+- [ ] Collaborative execution
 
 ## License
 
-Proprietary. All rights reserved.
+MIT License. See [LICENSE](LICENSE) for details.
